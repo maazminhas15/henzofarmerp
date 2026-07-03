@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Henzo Farm ERP</title>
+
+<!-- ============================================================
+     STEP 1 — PASTE YOUR TWO SUPABASE VALUES BELOW
+     Find them in: Supabase -> Project Settings -> API
+       * Project URL           -> SUPABASE_URL
+       * Project API key (anon) -> SUPABASE_ANON_KEY   (use "anon public", NOT service_role)
+     ============================================================ -->
+<script>
+  const SUPABASE_URL      = "PASTE_YOUR_PROJECT_URL_HERE";
+  const SUPABASE_ANON_KEY = "PASTE_YOUR_ANON_PUBLIC_KEY_HERE";
+  const APP_PIN           = "1234"; // change this to your own PIN
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --green:#1f5c3d; --green-d:#16452e; --green-l:#2e7d54;
+    --yolk:#f4a723; --yolk-d:#d98a10;
+    --paper:#faf7f0; --card:#ffffff; --ink:#20241f; --muted:#6f7a6d;
+    --line:#e7e2d6; --red:#c14a3c; --red-bg:#fbecea; --ok:#2e7d54;
+    --shadow:0 1px 2px rgba(20,40,25,.05), 0 8px 24px rgba(20,40,25,.06);
+    --radius:14px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+    background:var(--paper); color:var(--ink); font-size:15px; line-height:1.45;
+  }
+  h1,h2,h3{margin:0;font-weight:700;letter-spacing:-.01em}
+  button{font-family:inherit;cursor:pointer}
+  input,select{font-family:inherit;font-size:15px}
+
+  /* ---------- Top bar ---------- */
+  header{
+    background:linear-gradient(180deg,var(--green),var(--green-d));
+    color:#fff; padding:14px 18px; display:flex; align-items:center; gap:12px;
+    position:sticky; top:0; z-index:20;
+  }
+  .logo{
+    width:34px;height:34px;border-radius:9px;background:var(--yolk);
+    display:grid;place-items:center;font-size:20px;flex:none;
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.12);
+  }
+  header .title{font-size:17px;font-weight:800}
+  header .sub{font-size:12px;opacity:.7;margin-top:-2px}
+  header .spacer{flex:1}
+  .pill{background:rgba(255,255,255,.14);border:none;color:#fff;padding:7px 12px;border-radius:20px;font-size:13px}
+
+  /* ---------- Tabs ---------- */
+  nav{
+    display:flex; gap:4px; padding:8px 10px; background:var(--card);
+    border-bottom:1px solid var(--line); overflow-x:auto; position:sticky; top:62px; z-index:15;
+  }
+  nav button{
+    border:none;background:transparent;color:var(--muted);
+    padding:9px 14px;border-radius:10px;font-size:14px;font-weight:600;white-space:nowrap;
+  }
+  nav button.active{background:var(--green);color:#fff}
+
+  main{max-width:1040px;margin:0 auto;padding:18px 14px 60px}
+
+  /* ---------- Cards / KPIs ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
+  .kpi .label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+  .kpi .val{font-size:23px;font-weight:800;margin-top:4px}
+  .kpi.good .val{color:var(--ok)} .kpi.bad .val{color:var(--red)} .kpi.accent .val{color:var(--yolk-d)}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;overflow:hidden}
+  .panel .head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .panel .head h3{font-size:15px}
+  .panel .head .spacer{flex:1}
+  .panel .body{padding:14px 16px}
+
+  /* ---------- Buttons ---------- */
+  .btn{background:var(--green);color:#fff;border:none;padding:9px 15px;border-radius:10px;font-weight:700;font-size:14px}
+  .btn.yolk{background:var(--yolk);color:#3a2a00}
+  .btn.ghost{background:transparent;color:var(--green);border:1px solid var(--line)}
+  .btn.sm{padding:6px 11px;font-size:13px}
+  .btn.danger{background:var(--red-bg);color:var(--red)}
+
+  /* ---------- Tables ---------- */
+  .twrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.03em;padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap;font-weight:700}
+  td{padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td.num,th.num{text-align:right}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:12px;font-weight:600;background:#eef3ee;color:var(--green-l)}
+  .tag.feed{background:#eaf3ec;color:#2e7d54}.tag.vaccine{background:#eef0fb;color:#4657b0}
+  .tag.chicks{background:#fdf2e3;color:#d98a10}.tag.misc{background:#f1efe9;color:#7a746a}
+  .due{color:var(--red);font-weight:700}
+  .paid{color:var(--ok)}
+
+  /* ---------- Forms / modal ---------- */
+  .overlay{position:fixed;inset:0;background:rgba(20,30,22,.45);display:none;place-items:center;z-index:40;padding:16px}
+  .overlay.show{display:grid}
+  .modal{background:var(--card);border-radius:16px;width:100%;max-width:460px;max-height:90vh;overflow:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modal h3{padding:16px 18px;border-bottom:1px solid var(--line);font-size:16px}
+  .form{padding:16px 18px;display:grid;gap:12px}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px;text-transform:uppercase;letter-spacing:.03em}
+  .field input,.field select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff}
+  .field input:focus,.field select:focus{outline:none;border-color:var(--green-l);box-shadow:0 0 0 3px rgba(46,125,84,.12)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .hint{font-size:12px;color:var(--muted)}
+  .modal .actions{padding:14px 18px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+
+  .empty{text-align:center;color:var(--muted);padding:34px 16px}
+  .empty .big{font-size:30px;margin-bottom:6px}
+
+  /* ---------- Chart ---------- */
+  .chart{display:flex;align-items:flex-end;gap:10px;height:150px;padding:8px 4px 0}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:34px}
+  .bars{display:flex;gap:3px;align-items:flex-end;height:120px}
+  .bar{width:12px;border-radius:4px 4px 0 0}
+  .bar.rev{background:var(--green-l)} .bar.exp{background:var(--yolk)}
+  .bar-col .m{font-size:11px;color:var(--muted)}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--muted);padding:0 4px 4px}
+  .legend .dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+  /* ---------- Setup / PIN screens ---------- */
+  .center{min-height:100vh;display:grid;place-items:center;padding:20px}
+  .card-lg{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);max-width:460px;width:100%;padding:26px}
+  .card-lg .logo{margin:0 auto 12px}
+  .card-lg h2{text-align:center;margin-bottom:6px}
+  .card-lg p{color:var(--muted);text-align:center;margin:0 0 18px}
+  .card-lg ol{color:var(--muted);font-size:14px;line-height:1.7;padding-left:20px}
+  .pin-in{font-size:26px;letter-spacing:10px;text-align:center;padding:12px;width:100%;border:1px solid var(--line);border-radius:12px}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 18px;border-radius:12px;font-size:14px;z-index:60;opacity:0;transition:.25s;pointer-events:none}
+  .toast.show{opacity:1}
+  .toast.err{background:var(--red)}
+  @media(max-width:520px){ .row2{grid-template-columns:1fr} .kpi .val{font-size:20px} }
+</style>
+</head>
+<body>
+
+<!-- SETUP screen (shown if keys not filled) -->
+<div id="setup" class="center" style="display:none">
+  <div class="card-lg">
+    <div class="logo">🥚</div>
+    <h2>Almost there</h2>
+    <p>Add your Supabase keys to switch this on.</p>
+    <ol>
+      <li>Open your Supabase project → <b>Project Settings → API</b></li>
+      <li>Copy the <b>Project URL</b> and the <b>anon public</b> key</li>
+      <li>Open this <b>index.html</b> file, paste both at the very top where it says <code>PASTE_...</code></li>
+      <li>Save, re-upload to Vercel, done.</li>
+    </ol>
+  </div>
+</div>
+
+<!-- PIN screen -->
+<div id="pinscreen" class="center" style="display:none">
+  <div class="card-lg">
+    <div class="logo">🥚</div>
+    <h2>Henzo Farm</h2>
+    <p>Enter your PIN to continue</p>
+    <input id="pinInput" class="pin-in" type="password" inputmode="numeric" maxlength="8" placeholder="••••" />
+    <button class="btn" style="width:100%;margin-top:14px" onclick="checkPin()">Unlock</button>
+    <p id="pinErr" style="color:var(--red);display:none;margin-top:10px">Wrong PIN, try again</p>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="app" style="display:none">
+  <header>
+    <div class="logo">🥚</div>
+    <div>
+      <div class="title">Henzo Farm ERP</div>
+      <div class="sub">Poultry management</div>
+    </div>
+    <div class="spacer"></div>
+    <button class="pill" onclick="loadAll()">↻ Refresh</button>
+  </header>
+
+  <nav id="tabs">
+    <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="sales">Sales</button>
+    <button data-tab="customers">Customers</button>
+    <button data-tab="expenses">Expenses</button>
+    <button data-tab="flocks">Flocks</button>
+  </nav>
+
+  <main id="view"></main>
+</div>
+
+<!-- Modal host -->
+<div id="overlay" class="overlay"><div id="modalHost"></div></div>
+<div id="toast" class="toast"></div>
+
+<script>
+/* ============================================================
+   Boot: check config -> PIN -> app
+   ============================================================ */
+let db = null;
+const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length > 20;
+
+const el = id => document.getElementById(id);
+const show = (id,disp="block") => el(id).style.display = disp;
+const hide = id => el(id).style.display = "none";
+
+if(!configured){
+  show("setup","grid");
+}else{
+  db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  if(sessionStorage.getItem("henzo_ok")==="1"){ startApp(); }
+  else { show("pinscreen","grid"); el("pinInput").focus(); }
+}
+el("pinInput")?.addEventListener("keydown",e=>{ if(e.key==="Enter") checkPin(); });
+function checkPin(){
+  if(el("pinInput").value === APP_PIN){
+    sessionStorage.setItem("henzo_ok","1"); hide("pinscreen"); startApp();
+  }else{ el("pinErr").style.display="block"; el("pinInput").value=""; }
+}
+function startApp(){ show("app"); loadAll(); }
+
+/* ============================================================
+   Helpers
+   ============================================================ */
+const money = n => "Rs " + Math.round(Number(n)||0).toLocaleString("en-PK");
+const numf  = n => (Number(n)||0).toLocaleString("en-PK");
+function toast(msg, err=false){
+  const t=el("toast"); t.textContent=msg; t.className="toast show"+(err?" err":"");
+  setTimeout(()=>t.className="toast",2200);
+}
+function fmtDate(d){ if(!d) return ""; const x=new Date(d); return x.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"}); }
+function openModal(html){ el("modalHost").innerHTML=html; el("overlay").classList.add("show"); }
+function closeModal(){ el("overlay").classList.remove("show"); el("modalHost").innerHTML=""; }
+el("overlay").addEventListener("click",e=>{ if(e.target.id==="overlay") closeModal(); });
+
+/* ============================================================
+   State + data loading
+   ============================================================ */
+let S = { flocks:[], customers:[], sales:[], expenses:[], balances:[] };
+let currentTab = "dashboard";
+
+document.querySelectorAll("#tabs button").forEach(b=>{
+  b.onclick=()=>{ document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active"));
+    b.classList.add("active"); currentTab=b.dataset.tab; render(); };
+});
+
+async function loadAll(){
+  el("view").innerHTML = `<div class="empty"><div class="big">🐔</div>Loading your farm data…</div>`;
+  try{
+    const [fl,cu,sa,ex,ba] = await Promise.all([
+      db.from("flocks").select("*").order("purchased"),
+      db.from("customers").select("*").order("name"),
+      db.from("sales").select("*").order("sale_date",{ascending:false}),
+      db.from("expenses").select("*").order("expense_date",{ascending:false}),
+      db.from("v_customer_balances").select("*")
+    ]);
+    for(const r of [fl,cu,sa,ex,ba]) if(r.error) throw r.error;
+    S={ flocks:fl.data, customers:cu.data, sales:sa.data, expenses:ex.data, balances:ba.data };
+    render();
+  }catch(e){
+    el("view").innerHTML=`<div class="empty"><div class="big">⚠️</div>Couldn't load data.<br><span class="hint">${e.message||e}</span><br><br>
+      <span class="hint">Check that you ran the SQL file in Supabase and that your keys are correct.</span></div>`;
+  }
+}
+
+function render(){ ({dashboard:vDashboard,sales:vSales,customers:vCustomers,expenses:vExpenses,flocks:vFlocks}[currentTab])(); }
+
+/* ============================================================
+   DASHBOARD
+   ============================================================ */
+function vDashboard(){
+  const rev = S.sales.reduce((a,s)=>a+Number(s.total_amount||0),0);
+  const paid= S.sales.reduce((a,s)=>a+Number(s.amount_paid||0),0);
+  const due = rev-paid;
+  const exp = S.expenses.reduce((a,e)=>a+Number(e.amount||0),0);
+  const net = rev-exp;
+  const birds = S.flocks.reduce((a,f)=>a+Number(f.live_birds||0),0);
+
+  // monthly rev vs exp (last 6 months present in data)
+  const byMonth={};
+  const key=d=>{ const x=new Date(d); return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0"); };
+  S.sales.forEach(s=>{ const k=key(s.sale_date); (byMonth[k]=byMonth[k]||{r:0,e:0}).r+=Number(s.total_amount||0); });
+  S.expenses.forEach(e=>{ const k=key(e.expense_date); (byMonth[k]=byMonth[k]||{r:0,e:0}).e+=Number(e.amount||0); });
+  const months=Object.keys(byMonth).sort().slice(-6);
+  const max=Math.max(1,...months.map(m=>Math.max(byMonth[m].r,byMonth[m].e)));
+  const bars=months.map(m=>{
+    const o=byMonth[m]; const mn=new Date(m+"-01").toLocaleDateString("en",{month:"short"});
+    return `<div class="bar-col"><div class="bars">
+      <div class="bar rev" style="height:${o.r/max*120}px" title="Revenue ${money(o.r)}"></div>
+      <div class="bar exp" style="height:${o.e/max*120}px" title="Expense ${money(o.e)}"></div>
+    </div><div class="m">${mn}</div></div>`;
+  }).join("");
+
+  const recent = S.sales.slice(0,6).map(s=>`<tr>
+    <td>${fmtDate(s.sale_date)}</td><td>${s.customer_name||"—"}</td>
+    <td class="num">${money(s.total_amount)}</td>
+    <td class="num">${Number(s.balance)>0?`<span class="due">${money(s.balance)}</span>`:`<span class="paid">Paid</span>`}</td>
+  </tr>`).join("");
+
+  el("view").innerHTML = `
+    <div class="kpis">
+      <div class="kpi accent"><div class="label">Total Revenue</div><div class="val">${money(rev)}</div></div>
+      <div class="kpi bad"><div class="label">Total Expenses</div><div class="val">${money(exp)}</div></div>
+      <div class="kpi ${net>=0?'good':'bad'}"><div class="label">Net Profit / Loss</div><div class="val">${money(net)}</div></div>
+      <div class="kpi ${due>0?'bad':'good'}"><div class="label">Receivables (Khata)</div><div class="val">${money(due)}</div></div>
+      <div class="kpi"><div class="label">Live Birds</div><div class="val">${numf(birds)}</div></div>
+      <div class="kpi"><div class="label">Customers</div><div class="val">${numf(S.customers.length)}</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="head"><h3>Revenue vs Expenses</h3></div>
+      <div class="body">
+        <div class="legend"><span><span class="dot" style="background:var(--green-l)"></span>Revenue</span>
+        <span><span class="dot" style="background:var(--yolk)"></span>Expenses</span></div>
+        <div class="chart">${bars||'<div class="hint">No data yet</div>'}</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="head"><h3>Recent Sales</h3><div class="spacer"></div>
+        <button class="btn sm" onclick="tab('sales')">View all</button></div>
+      <div class="twrap"><table><thead><tr><th>Date</th><th>Customer</th><th class="num">Amount</th><th class="num">Balance</th></tr></thead>
+      <tbody>${recent||'<tr><td colspan=4 class="empty">No sales yet</td></tr>'}</tbody></table></div>
+    </div>`;
+}
+function tab(name){ document.querySelector(`#tabs button[data-tab="${name}"]`).click(); }
+
+/* ============================================================
+   SALES
+   ============================================================ */
+function vSales(){
+  const rows = S.sales.map(s=>`<tr>
+    <td>${fmtDate(s.sale_date)}</td>
+    <td>${s.customer_name||"—"}</td>
+    <td class="num">${Number(s.eggs_dozens)?numf(s.eggs_dozens)+" dz":"—"}</td>
+    <td class="num">${Number(s.meat_kg)?numf(s.meat_kg)+" kg":"—"}</td>
+    <td class="num">${money(s.total_amount)}</td>
+    <td class="num">${Number(s.balance)>0?`<span class="due">${money(s.balance)}</span>`:`<span class="paid">✓</span>`}</td>
+    <td class="num">
+      <button class="btn sm ghost" onclick='saleForm(${JSON.stringify(s)})'>Edit</button>
+      <button class="btn sm danger" onclick="delRow('sales','${s.id}')">✕</button>
+    </td></tr>`).join("");
+  el("view").innerHTML=`
+    <div class="panel">
+      <div class="head"><h3>Sales</h3><div class="spacer"></div>
+        <button class="btn yolk" onclick="saleForm()">+ New sale</button></div>
+      <div class="twrap"><table>
+        <thead><tr><th>Date</th><th>Customer</th><th class="num">Eggs</th><th class="num">Meat</th>
+        <th class="num">Total</th><th class="num">Balance</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan=7 class="empty">No sales yet. Add your first one.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function saleForm(s){
+  const e=s||{};
+  const custOpts=S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("");
+  openModal(`
+    <div class="modal"><h3>${s?'Edit sale':'New sale'}</h3>
+    <div class="form">
+      <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>Customer</label>
+        <input id="s_cust" list="custlist" value="${(e.customer_name||'').replace(/"/g,'&quot;')}" placeholder="Type or pick a name">
+        <datalist id="custlist">${custOpts}</datalist></div>
+      <div class="row2">
+        <div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div>
+      </div>
+      <div class="field"><label>Meat (kg)</label><input id="s_meat" type="number" step="0.5" value="${e.meat_kg||0}"></div>
+      <div class="row2">
+        <div class="field"><label>Total amount (Rs)</label><input id="s_total" type="number" value="${e.total_amount||0}"></div>
+        <div class="field"><label>Amount paid (Rs)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}"></div>
+      </div>
+      <div class="hint" id="s_hint"></div>
+      <div class="field"><label>Payment method</label>
+        <select id="s_method"><option ${e.payment_method==='Cash'?'selected':''}>Cash</option>
+        <option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button>
+    </div></div>`);
+  calcTotal();
+}
+function calcTotal(){
+  const dz=+el("s_dz").value||0, ppd=+el("s_ppd").value||0;
+  const eggTotal=dz*ppd;
+  el("s_hint").textContent = eggTotal? `Egg subtotal: ${money(eggTotal)} (add meat value on top if any)` : "";
+  const t=el("s_total"); if(!s_totalTouched && eggTotal>0) t.value=eggTotal;
+}
+let s_totalTouched=false;
+document.addEventListener("input",e=>{ if(e.target && e.target.id==="s_total") s_totalTouched=true; });
+
+async function saveSale(id){
+  const name=el("s_cust").value.trim();
+  const total=+el("s_total").value||0;
+  let paidVal = el("s_paid").value; paidVal = paidVal===""? total : (+paidVal||0);
+  const rec={
+    sale_date: el("s_date").value,
+    customer_name: name||null,
+    eggs_dozens:+el("s_dz").value||0,
+    price_per_dozen:+el("s_ppd").value||0,
+    meat_kg:+el("s_meat").value||0,
+    total_amount: total,
+    amount_paid: paidVal,
+    payment_method: el("s_method").value
+  };
+  try{
+    // ensure customer exists + link id
+    let cid=null;
+    if(name){
+      let c=S.customers.find(x=>x.name.toLowerCase()===name.toLowerCase());
+      if(!c){ const {data,error}=await db.from("customers").insert({name}).select().single(); if(error)throw error; c=data; S.customers.push(c); }
+      cid=c.id;
+    }
+    rec.customer_id=cid;
+    if(id){ const {error}=await db.from("sales").update(rec).eq("id",id); if(error)throw error; toast("Sale updated"); }
+    else  { const {error}=await db.from("sales").insert(rec); if(error)throw error; toast("Sale saved"); }
+    s_totalTouched=false; closeModal(); await loadAll();
+  }catch(err){ toast(err.message||"Error saving",true); }
+}
+
+/* ============================================================
+   CUSTOMERS  (khata balances from the DB view)
+   ============================================================ */
+function vCustomers(){
+  const b=[...S.balances].sort((a,b)=>b.outstanding-a.outstanding || b.billed-a.billed);
+  const rows=b.map(c=>`<tr>
+    <td>${c.name}</td>
+    <td class="num">${numf(c.transactions)}</td>
+    <td class="num">${money(c.billed)}</td>
+    <td class="num">${money(c.received)}</td>
+    <td class="num">${c.outstanding>0?`<span class="due">${money(c.outstanding)}</span>`:`<span class="paid">Clear</span>`}</td>
+  </tr>`).join("");
+  const totalDue=b.reduce((a,c)=>a+Number(c.outstanding||0),0);
+  el("view").innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="label">Customers</div><div class="val">${numf(b.length)}</div></div>
+      <div class="kpi ${totalDue>0?'bad':'good'}"><div class="label">Total Outstanding</div><div class="val">${money(totalDue)}</div></div>
+    </div>
+    <div class="panel">
+      <div class="head"><h3>Customer Ledger</h3><div class="spacer"></div>
+        <button class="btn yolk" onclick="custForm()">+ Add customer</button></div>
+      <div class="twrap"><table>
+        <thead><tr><th>Name</th><th class="num">Sales</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Balance</th></tr></thead>
+        <tbody>${rows||'<tr><td colspan=5 class="empty">No customers yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+function custForm(){
+  openModal(`<div class="modal"><h3>Add customer</h3>
+    <div class="form">
+      <div class="field"><label>Name</label><input id="c_name" placeholder="e.g. Jabeen Aunty"></div>
+      <div class="field"><label>Phone (optional)</label><input id="c_phone" placeholder="03xx-xxxxxxx"></div>
+    </div>
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveCust()">Save</button></div></div>`);
+}
+async function saveCust(){
+  const name=el("c_name").value.trim(); if(!name){toast("Enter a name",true);return;}
+  try{ const {error}=await db.from("customers").insert({name,phone:el("c_phone").value.trim()||null});
+    if(error)throw error; toast("Customer added"); closeModal(); await loadAll();
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ============================================================
+   EXPENSES
+   ============================================================ */
+function vExpenses(){
+  const total=S.expenses.reduce((a,e)=>a+Number(e.amount||0),0);
+  const byCat={}; S.expenses.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+Number(e.amount||0));
+  const chips=Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<span class="tag ${k.toLowerCase()}">${k}: ${money(v)}</span>`).join(" ");
+  const rows=S.expenses.map(e=>`<tr>
+    <td>${fmtDate(e.expense_date)}</td>
+    <td><span class="tag ${(e.category||'misc').toLowerCase()}">${e.category||'Misc'}</span></td>
+    <td>${e.description||"—"}</td>
+    <td>${e.flock_scope||"—"}</td>
+    <td class="num">${money(e.amount)}</td>
+    <td class="num"><button class="btn sm ghost" onclick='expForm(${JSON.stringify(e)})'>Edit</button>
+      <button class="btn sm danger" onclick="delRow('expenses','${e.id}')">✕</button></td>
+  </tr>`).join("");
+  el("view").innerHTML=`
+    <div class="kpis"><div class="kpi bad"><div class="label">Total Expenses</div><div class="val">${money(total)}</div></div></div>
+    <div class="panel"><div class="body">${chips||''}</div></div>
+    <div class="panel">
+      <div class="head"><h3>Expenses</h3><div class="spacer"></div>
+        <button class="btn yolk" onclick="expForm()">+ New expense</button></div>
+      <div class="twrap"><table>
+        <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Flock</th><th class="num">Amount</th><th></th></tr></thead>
+        <tbody>${rows||'<tr><td colspan=6 class="empty">No expenses yet</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+}
+function expForm(x){
+  const e=x||{};
+  const cats=["Feed","Vaccine","Chicks","Misc","Visit","Labour","Shed"];
+  const catOpts=cats.map(c=>`<option ${e.category===c?'selected':''}>${c}</option>`).join("");
+  const scopes=["Old","New","General"];
+  const scopeOpts=scopes.map(c=>`<option ${e.flock_scope===c?'selected':''}>${c}</option>`).join("");
+  openModal(`<div class="modal"><h3>${x?'Edit expense':'New expense'}</h3>
+    <div class="form">
+      <div class="field"><label>Date</label><input id="e_date" type="date" value="${e.expense_date||new Date().toISOString().slice(0,10)}"></div>
+      <div class="row2">
+        <div class="field"><label>Category</label><select id="e_cat">${catOpts}</select></div>
+        <div class="field"><label>Flock</label><select id="e_scope">${scopeOpts}</select></div>
+      </div>
+      <div class="field"><label>Description</label><input id="e_desc" value="${(e.description||'').replace(/"/g,'&quot;')}" placeholder="e.g. Feed 100kg"></div>
+      <div class="row2">
+        <div class="field"><label>Qty</label><input id="e_qty" type="number" value="${e.qty||0}"></div>
+        <div class="field"><label>Amount (Rs)</label><input id="e_amt" type="number" value="${e.amount||0}"></div>
+      </div>
+    </div>
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveExp('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+}
+async function saveExp(id){
+  const scope=el("e_scope").value;
+  const flock=S.flocks.find(f=>(scope==="Old"&&f.code==="OLD")||(scope==="New"&&f.code==="NEW"));
+  const rec={ expense_date:el("e_date").value, category:el("e_cat").value, flock_scope:scope,
+    flock_id: flock?flock.id:null, description:el("e_desc").value.trim(),
+    qty:+el("e_qty").value||0, amount:+el("e_amt").value||0 };
+  try{
+    if(id){ const {error}=await db.from("expenses").update(rec).eq("id",id); if(error)throw error; toast("Expense updated"); }
+    else  { const {error}=await db.from("expenses").insert(rec); if(error)throw error; toast("Expense saved"); }
+    closeModal(); await loadAll();
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ============================================================
+   FLOCKS
+   ============================================================ */
+function vFlocks(){
+  const cards=S.flocks.map(f=>{
+    const spent=S.expenses.filter(e=>e.flock_id===f.id).reduce((a,e)=>a+Number(e.amount||0),0);
+    const loss=(f.start_count||0)-(f.live_birds||0);
+    return `<div class="panel"><div class="body">
+      <div style="display:flex;align-items:center;gap:10px">
+        <h3 style="font-size:16px">${f.name}</h3>
+        <span class="tag">${f.breed||'—'}</span><div class="spacer" style="flex:1"></div>
+        <button class="btn sm ghost" onclick='flockForm(${JSON.stringify(f)})'>Edit</button>
+      </div>
+      <div class="kpis" style="margin-top:12px">
+        <div class="kpi"><div class="label">Live Birds</div><div class="val">${numf(f.live_birds)}</div></div>
+        <div class="kpi"><div class="label">Started With</div><div class="val">${numf(f.start_count)}</div></div>
+        <div class="kpi ${loss>0?'bad':''}"><div class="label">Lost</div><div class="val">${numf(loss)}</div></div>
+        <div class="kpi accent"><div class="label">Spent on flock</div><div class="val">${money(spent)}</div></div>
+      </div>
+      <div class="hint">Purchased ${fmtDate(f.purchased)}</div>
+    </div></div>`;
+  }).join("");
+  el("view").innerHTML=`<div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+      <button class="btn yolk" onclick="flockForm()">+ Add flock</button></div>
+    ${cards||'<div class="empty">No flocks yet</div>'}`;
+}
+function flockForm(x){
+  const f=x||{};
+  openModal(`<div class="modal"><h3>${x?'Edit flock':'Add flock'}</h3>
+    <div class="form">
+      <div class="field"><label>Name</label><input id="f_name" value="${(f.name||'').replace(/"/g,'&quot;')}" placeholder="e.g. New Flock"></div>
+      <div class="row2">
+        <div class="field"><label>Breed</label><input id="f_breed" value="${(f.breed||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Purchased</label><input id="f_date" type="date" value="${f.purchased||''}"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Start count</label><input id="f_start" type="number" value="${f.start_count||0}"></div>
+        <div class="field"><label>Live birds</label><input id="f_live" type="number" value="${f.live_birds||0}"></div>
+      </div>
+    </div>
+    <div class="actions"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveFlock('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+}
+async function saveFlock(id){
+  const rec={ name:el("f_name").value.trim(), breed:el("f_breed").value.trim(),
+    purchased:el("f_date").value||null, start_count:+el("f_start").value||0, live_birds:+el("f_live").value||0 };
+  if(!rec.name){toast("Enter a name",true);return;}
+  try{
+    if(id){ const {error}=await db.from("flocks").update(rec).eq("id",id); if(error)throw error; toast("Flock updated"); }
+    else  { rec.code=(rec.name.slice(0,3).toUpperCase()+Date.now()).slice(0,12); const {error}=await db.from("flocks").insert(rec); if(error)throw error; toast("Flock added"); }
+    closeModal(); await loadAll();
+  }catch(e){ toast(e.message,true); }
+}
+
+/* ============================================================
+   Delete (shared)
+   ============================================================ */
+async function delRow(table,id){
+  if(!confirm("Delete this record? This can't be undone.")) return;
+  try{ const {error}=await db.from(table).delete().eq("id",id); if(error)throw error; toast("Deleted"); await loadAll(); }
+  catch(e){ toast(e.message,true); }
+}
+</script>
+</body>
+</html>
