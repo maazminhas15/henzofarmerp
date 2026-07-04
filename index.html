@@ -367,19 +367,22 @@ function vDashboard(){
 function itemLabel(s){
   const p=[];
   if(+s.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(s.eggs_dozens)} dz</span>`);
-  if(+s.meat_kg>0) p.push(`<span class="chip meat">🍗 ${numf(s.meat_kg)} kg</span>`);
+  if(+s.meat_birds>0) p.push(`<span class="chip meat">🍗 ${numf(s.meat_birds)} roaster${+s.meat_birds>1?'s':''}</span>`);
+  if(+s.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(s.chicks)} chicks</span>`);
   return p.join(" ")||'<span class="chip misc">—</span>';
 }
 function flockCardHTML(f){
-  const live=+f.live_birds, start=+f.start_count||1, lost=Math.max(0,start-live);
-  const surv=((live/start)*100).toFixed(1);
+  const start=+f.start_count||0, mort=+f.mortality||0, sold=+f.sold||0;
+  const live=+f.live_birds, surv=start?((live/start)*100).toFixed(1):0;
   return `<div class="fcard"><div class="fh"><h3>${f.name}</h3><span class="tag">${f.breed||"—"}</span>
-    <span class="sp" style="flex:1"></span><span class="dt" style="font-size:12px">${fmtDate(f.purchased)}</span></div>
-    <div class="fstats"><div class="fstat"><div class="l">Starting</div><div class="n">${numf(start)}</div></div>
-      <div class="fstat"><div class="l">Live now</div><div class="n v-emerald">${numf(live)}</div></div>
-      <div class="fstat"><div class="l">Survival</div><div class="n v-indigo">${surv}%</div></div></div>
+    <span style="flex:1"></span><span class="dt" style="font-size:12px">${fmtDate(f.purchased)}</span></div>
+    <div class="fstats" style="grid-template-columns:repeat(4,1fr)">
+      <div class="fstat"><div class="l">Start</div><div class="n">${numf(start)}</div></div>
+      <div class="fstat"><div class="l">Died</div><div class="n v-red">${numf(mort)}</div></div>
+      <div class="fstat"><div class="l">Sold</div><div class="n">${numf(sold)}</div></div>
+      <div class="fstat"><div class="l">Live</div><div class="n v-emerald">${numf(live)}</div></div></div>
     <div class="prog"><i style="width:${surv}%"></i></div>
-    <div class="prog-lbl"><span>Mortality tracker</span><span>${numf(lost)} birds lost</span></div></div>`;
+    <div class="prog-lbl"><span>Survival ${surv}%</span><span>${numf(mort)} died · ${numf(sold)} sold</span></div></div>`;
 }
 function drawCashChart(){
   const byM={}; const k=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0");};
@@ -420,7 +423,7 @@ function vSales(){
   el("view").innerHTML=`
     <div class="toolbar">
       <div class="search">${ICN.search}<input id="q" placeholder="Search customer…" value="${sf.q}" oninput="sf.q=this.value;renderSalesRows()"></div>
-      <select class="sel" onchange="sf.item=this.value;renderSalesRows()"><option value="all">All items</option><option value="eggs">Eggs</option><option value="meat">Meat</option></select>
+      <select class="sel" onchange="sf.item=this.value;renderSalesRows()"><option value="all">All items</option><option value="eggs">Eggs</option><option value="meat">Roasters/Meat</option><option value="chicks">Chicks</option></select>
       <select class="sel" onchange="sf.method=this.value;renderSalesRows()"><option value="all">All methods</option><option>Cash</option><option>Online</option></select>
       <button class="btn" onclick="saleForm()">${ICN.plus} New Sale</button>
     </div>
@@ -434,7 +437,8 @@ function filteredSales(){
   return S.sales.filter(s=>{
     if(sf.q && !(s.customer_name||"").toLowerCase().includes(sf.q.toLowerCase())) return false;
     if(sf.item==="eggs" && !(+s.eggs_dozens>0)) return false;
-    if(sf.item==="meat" && !(+s.meat_kg>0)) return false;
+    if(sf.item==="meat" && !(+s.meat_birds>0)) return false;
+    if(sf.item==="chicks" && !(+s.chicks>0)) return false;
     if(sf.method!=="all" && s.payment_method!==sf.method) return false;
     return true;
   });
@@ -463,7 +467,8 @@ function saleForm(s){const e=s||{};
         <datalist id="cl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
-      <div class="field"><label>Meat (kg)</label><input id="s_meat" type="number" step="0.5" value="${e.meat_kg||0}"></div>
+      <div class="row2"><div class="field"><label>Roasters / Meat (birds)</label><input id="s_meat" type="number" value="${e.meat_birds||0}"></div>
+        <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div></div>
       <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true"></div>
         <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}"></div></div>
       <div class="hint" id="s_hint">Fill eggs to auto-fill total</div>
@@ -480,7 +485,8 @@ async function saveSale(id){
   const name=el("s_cust").value.trim(), total=+el("s_total").value||0;
   let pv=el("s_paid").value; pv=pv===""?total:(+pv||0);
   const rec={sale_date:el("s_date").value,customer_name:name||null,eggs_dozens:+el("s_dz").value||0,
-    price_per_dozen:+el("s_ppd").value||0,meat_kg:+el("s_meat").value||0,total_amount:total,amount_paid:pv,payment_method:el("s_method").value};
+    price_per_dozen:+el("s_ppd").value||0,meat_birds:+el("s_meat").value||0,chicks:+el("s_chicks").value||0,
+    total_amount:total,amount_paid:pv,payment_method:el("s_method").value};
   try{
     let cid=null;
     if(name){let c=S.customers.find(x=>x.name.toLowerCase()===name.toLowerCase());
@@ -581,15 +587,17 @@ function vFlocks(){
   el("view").innerHTML=`<div class="toolbar"><div style="flex:1"></div><button class="btn" onclick="flockForm()">${ICN.plus} Add Flock</button></div>
     <div class="flocks">${S.flocks.map(f=>{
       const spent=S.expenses.filter(e=>e.flock_id===f.id).reduce((a,e)=>a+ +e.amount,0);
-      const live=+f.live_birds,start=+f.start_count||1,surv=((live/start)*100).toFixed(1),lost=Math.max(0,start-live);
+      const start=+f.start_count||0,mort=+f.mortality||0,sold=+f.sold||0,live=+f.live_birds,surv=start?((live/start)*100).toFixed(1):0;
       return `<div class="fcard"><div class="fh"><h3>${f.name}</h3><span class="tag">${f.breed||'—'}</span>
         <span style="flex:1"></span><button class="iconbtn" onclick='flockForm(${JSON.stringify(f)})'>${ICN.edit}</button></div>
         <div class="dt" style="font-size:12px;margin-bottom:8px">Purchased ${fmtDate(f.purchased)}</div>
-        <div class="fstats"><div class="fstat"><div class="l">Starting</div><div class="n">${numf(start)}</div></div>
-          <div class="fstat"><div class="l">Live now</div><div class="n v-emerald">${numf(live)}</div></div>
-          <div class="fstat"><div class="l">Survival</div><div class="n v-indigo">${surv}%</div></div></div>
+        <div class="fstats" style="grid-template-columns:repeat(4,1fr)">
+          <div class="fstat"><div class="l">Start</div><div class="n">${numf(start)}</div></div>
+          <div class="fstat"><div class="l">Died</div><div class="n v-red">${numf(mort)}</div></div>
+          <div class="fstat"><div class="l">Sold</div><div class="n">${numf(sold)}</div></div>
+          <div class="fstat"><div class="l">Live</div><div class="n v-emerald">${numf(live)}</div></div></div>
         <div class="prog"><i style="width:${surv}%"></i></div>
-        <div class="prog-lbl"><span>${numf(lost)} birds lost</span><span>Spent ${moneyT(spent)}</span></div></div>`;
+        <div class="prog-lbl"><span>Survival ${surv}%</span><span>Spent ${moneyT(spent)}</span></div></div>`;
     }).join("")||'<div class="empty">No flocks</div>'}</div>`;
 }
 function flockForm(x){const f=x||{};
@@ -597,14 +605,21 @@ function flockForm(x){const f=x||{};
     <div class="form"><div class="field"><label>Name</label><input id="f_name" value="${(f.name||'').replace(/"/g,'&quot;')}"></div>
       <div class="row2"><div class="field"><label>Breed</label><input id="f_breed" value="${(f.breed||'').replace(/"/g,'&quot;')}"></div>
         <div class="field"><label>Purchased</label><input id="f_date" type="date" value="${f.purchased||''}"></div></div>
-      <div class="row2"><div class="field"><label>Start count</label><input id="f_start" type="number" value="${f.start_count||0}"></div>
-        <div class="field"><label>Live birds</label><input id="f_live" type="number" value="${f.live_birds||0}"></div></div>
+      <div class="row2"><div class="field"><label>Start count</label><input id="f_start" type="number" value="${f.start_count||0}" oninput="calcLive()"></div>
+        <div class="field"><label>Mortality (died)</label><input id="f_mort" type="number" value="${f.mortality||0}" oninput="calcLive()"></div></div>
+      <div class="row2"><div class="field"><label>Sold (roasters)</label><input id="f_sold" type="number" value="${f.sold||0}" oninput="calcLive()"></div>
+        <div class="field"><label>Live now</label><input id="f_live" type="number" value="${f.live_birds||0}"></div></div>
+      <div class="hint" id="f_hint"></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveFlock('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+  calcLive();
 }
+function calcLive(){const s=+el("f_start").value||0,m=+el("f_mort").value||0,so=+el("f_sold").value||0;
+  const live=Math.max(0,s-m-so); el("f_live").value=live;
+  el("f_hint").textContent=`Live = ${s} start − ${m} died − ${so} sold = ${live}`;}
 async function saveFlock(id){
   const rec={name:el("f_name").value.trim(),breed:el("f_breed").value.trim(),purchased:el("f_date").value||null,
-    start_count:+el("f_start").value||0,live_birds:+el("f_live").value||0};
+    start_count:+el("f_start").value||0,mortality:+el("f_mort").value||0,sold:+el("f_sold").value||0,live_birds:+el("f_live").value||0};
   if(!rec.name){toast("Enter a name",'err');return;}
   try{if(!id) rec.code=(rec.name.slice(0,3).toUpperCase()+Date.now()).slice(0,12);
     const {error}= id? await db.from("flocks").update(rec).eq("id",id):await db.from("flocks").insert(rec);
@@ -619,7 +634,7 @@ function vReports(){
   const capex=S.expenses.filter(e=>e.type==='capex').reduce((a,e)=>a+ +e.amount,0);
   const bird=S.expenses.filter(e=>e.type==='biological').reduce((a,e)=>a+ +e.amount,0);
   const opProfit=rev-opCost;
-  const eggs=S.sales.reduce((a,s)=>a+ +s.eggs_dozens,0), meat=S.sales.reduce((a,s)=>a+ +s.meat_kg,0);
+  const eggs=S.sales.reduce((a,s)=>a+ +s.eggs_dozens,0), roasters=S.sales.reduce((a,s)=>a+ +s.meat_birds,0), chicks=S.sales.reduce((a,s)=>a+ +s.chicks,0);
   el("view").innerHTML=`
     <div class="grid-2" style="grid-template-columns:1fr 1fr">
       <div class="panel"><div class="ph"><span class="bar"></span><h3>Profit &amp; Loss Summary</h3></div>
@@ -636,7 +651,8 @@ function vReports(){
       <div class="panel"><div class="ph"><span class="bar" style="background:var(--emerald)"></span><h3>Production &amp; Data</h3></div>
         <div class="pb"><table><tbody>
           <tr><td>Total Eggs Sold</td><td class="num money">${numf(eggs)} dozen</td></tr>
-          <tr><td>Total Meat Sold</td><td class="num money">${numf(meat)} kg</td></tr>
+          <tr><td>Total Roasters Sold</td><td class="num money">${numf(roasters)} birds</td></tr>
+          <tr><td>Total Chicks Sold</td><td class="num money">${numf(chicks)} chicks</td></tr>
           <tr><td>Sales Transactions</td><td class="num money">${numf(S.sales.length)}</td></tr>
           <tr><td>Active Customers</td><td class="num money">${numf(S.customers.length)}</td></tr>
           <tr><td>Live Birds</td><td class="num money">${numf(S.flocks.reduce((a,f)=>a+ +f.live_birds,0))}</td></tr>
@@ -651,8 +667,8 @@ function vReports(){
 }
 function exportCSV(type){
   let rows,head,name;
-  if(type==="sales"){head=["Date","Customer","Eggs_Dozens","Price_Per_Dozen","Meat_kg","Total","Paid","Balance","Method"];
-    rows=S.sales.map(s=>[s.sale_date,s.customer_name,s.eggs_dozens,s.price_per_dozen,s.meat_kg,s.total_amount,s.amount_paid,s.balance,s.payment_method]);name="henzo_sales";}
+  if(type==="sales"){head=["Date","Customer","Eggs_Dozens","Price_Per_Dozen","Roasters","Chicks","Total","Paid","Balance","Method"];
+    rows=S.sales.map(s=>[s.sale_date,s.customer_name,s.eggs_dozens,s.price_per_dozen,s.meat_birds,s.chicks,s.total_amount,s.amount_paid,s.balance,s.payment_method]);name="henzo_sales";}
   else{head=["Date","Category","Type","Description","Flock","Qty","Amount"];
     rows=S.expenses.map(e=>[e.expense_date,e.category,e.type,e.description,e.flock_scope,e.qty,e.amount]);name="henzo_expenses";}
   const csv=[head.join(","),...rows.map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(","))].join("\n");
