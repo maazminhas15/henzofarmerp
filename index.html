@@ -310,7 +310,12 @@ function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();
 function vDashboard(){
   const rev=S.sales.reduce((a,s)=>a+ +s.total_amount,0);
   const paid=S.sales.reduce((a,s)=>a+ +s.amount_paid,0);
-  const due=rev-paid, exp=S.expenses.reduce((a,e)=>a+ +e.amount,0), net=rev-exp;
+  const due=rev-paid;
+  const opCost=S.expenses.filter(e=>e.type==='operating').reduce((a,e)=>a+ +e.amount,0);
+  const capex=S.expenses.filter(e=>e.type==='capex').reduce((a,e)=>a+ +e.amount,0);
+  const bird=S.expenses.filter(e=>e.type==='biological').reduce((a,e)=>a+ +e.amount,0);
+  const totalSpent=S.expenses.reduce((a,e)=>a+ +e.amount,0);
+  const opProfit=rev-opCost;
   const collRate=rev?((paid/rev)*100).toFixed(1):0;
   const birds=S.flocks.reduce((a,f)=>a+ +f.live_birds,0);
 
@@ -322,10 +327,20 @@ function vDashboard(){
         <div class="val v-emerald">${money(paid)}</div><div class="foot">${collRate}% collection rate</div></div>
       <div class="kpi"><div class="top"><span class="label">Outstanding (Khata)</span><span class="ico i-red">${ICN.wallet}</span></div>
         <div class="val v-red">${money(due)}</div><div class="foot" style="color:var(--red);cursor:pointer" onclick="tab('customers')">Collect receivables →</div></div>
-      <div class="kpi"><div class="top"><span class="label">Total Spent</span><span class="ico i-amber">${ICN.down}</span></div>
-        <div class="val">${money(exp)}</div><div class="foot">Feed, vaccine, chicks…</div></div>
-      <div class="kpi"><div class="top"><span class="label">Net Profit / Loss</span><span class="ico ${net>=0?'i-emerald':'i-red'}">${ICN.bag}</span></div>
-        <div class="val ${net>=0?'v-emerald':'v-red'}">${money(net)}</div><div class="foot">Revenue − expenses</div></div>
+      <div class="kpi"><div class="top"><span class="label">Operating Cost</span><span class="ico i-amber">${ICN.down}</span></div>
+        <div class="val">${money(opCost)}</div><div class="foot">Feed, vaccine, day-to-day</div></div>
+      <div class="kpi"><div class="top"><span class="label">Operating Profit / Loss</span><span class="ico ${opProfit>=0?'i-emerald':'i-red'}">${ICN.bag}</span></div>
+        <div class="val ${opProfit>=0?'v-emerald':'v-red'}">${money(opProfit)}</div><div class="foot">Revenue − operating cost</div></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="top"><span class="label">Total Farm Spent</span><span class="ico i-amber">${ICN.down}</span></div>
+        <div class="val">${money(totalSpent)}</div><div class="foot">All costs incl. setup</div></div>
+      <div class="kpi"><div class="top"><span class="label">Capital Invested</span><span class="ico i-indigo">${ICN.bag}</span></div>
+        <div class="val v-indigo">${money(capex)}</div><div class="foot">Shed, blocks, labour</div></div>
+      <div class="kpi"><div class="top"><span class="label">Bird Investment</span><span class="ico i-emerald">${ICN.chart}</span></div>
+        <div class="val">${money(bird)}</div><div class="foot">Chicks purchased</div></div>
+      <div class="kpi"><div class="top"><span class="label">Live Birds</span><span class="ico i-indigo">${ICN.users}</span></div>
+        <div class="val">${numf(birds)}</div><div class="foot">Across ${S.flocks.length} flocks</div></div>
     </div>
 
     <div class="grid-2">
@@ -347,7 +362,7 @@ function vDashboard(){
         <td class="num">${+s.balance>0?`<span class="due">${moneyT(s.balance)}</span>`:`<span class="clr">Paid</span>`}</td></tr>`).join("")
         ||'<tr><td colspan=5 class="empty">No sales yet</td></tr>'}</tbody></table></div></div>`;
 
-  drawCashChart(); drawDonut(exp);
+  drawCashChart(); drawDonut(totalSpent);
 }
 function itemLabel(s){
   const p=[];
@@ -517,6 +532,10 @@ function expForm(x){const e=x||{};
       <div class="field"><label>Date</label><input id="e_date" type="date" value="${e.expense_date||new Date().toISOString().slice(0,10)}"></div>
       <div class="row2"><div class="field"><label>Category</label><select id="e_cat">${cats.map(c=>`<option ${e.category===c?'selected':''}>${c}</option>`).join("")}</select></div>
         <div class="field"><label>Flock</label><select id="e_scope">${["Old","New","General"].map(c=>`<option ${e.flock_scope===c?'selected':''}>${c}</option>`).join("")}</select></div></div>
+      <div class="field"><label>Type</label><select id="e_type">
+        <option value="operating" ${(e.type||'operating')==='operating'?'selected':''}>Operating (day-to-day)</option>
+        <option value="capex" ${e.type==='capex'?'selected':''}>Capital (shed, blocks, labour)</option>
+        <option value="biological" ${e.type==='biological'?'selected':''}>Bird investment (chicks)</option></select></div>
       <div class="field"><label>Description</label><input id="e_desc" value="${(e.description||'').replace(/"/g,'&quot;')}" placeholder="e.g. Feed 100kg"></div>
       <div class="row2"><div class="field"><label>Qty</label><input id="e_qty" type="number" value="${e.qty||0}"></div>
         <div class="field"><label>Amount (PKR)</label><input id="e_amt" type="number" value="${e.amount||0}"></div></div>
@@ -525,7 +544,7 @@ function expForm(x){const e=x||{};
 }
 async function saveExp(id){
   const scope=el("e_scope").value, flock=S.flocks.find(f=>(scope==="Old"&&f.code==="OLD")||(scope==="New"&&f.code==="NEW"));
-  const rec={expense_date:el("e_date").value,category:el("e_cat").value,flock_scope:scope,flock_id:flock?flock.id:null,
+  const rec={expense_date:el("e_date").value,category:el("e_cat").value,type:el("e_type").value,flock_scope:scope,flock_id:flock?flock.id:null,
     description:el("e_desc").value.trim(),qty:+el("e_qty").value||0,amount:+el("e_amt").value||0};
   try{const {error}= id? await db.from("expenses").update(rec).eq("id",id):await db.from("expenses").insert(rec);
     if(error)throw error; toast(id?"Expense updated":"Expense saved"); closeModal(); await loadAll();
@@ -596,7 +615,10 @@ async function saveFlock(id){
 /* ---------- REPORTS ---------- */
 function vReports(){
   const rev=S.sales.reduce((a,s)=>a+ +s.total_amount,0), paid=S.sales.reduce((a,s)=>a+ +s.amount_paid,0);
-  const exp=S.expenses.reduce((a,e)=>a+ +e.amount,0), net=rev-exp;
+  const opCost=S.expenses.filter(e=>e.type==='operating').reduce((a,e)=>a+ +e.amount,0);
+  const capex=S.expenses.filter(e=>e.type==='capex').reduce((a,e)=>a+ +e.amount,0);
+  const bird=S.expenses.filter(e=>e.type==='biological').reduce((a,e)=>a+ +e.amount,0);
+  const opProfit=rev-opCost;
   const eggs=S.sales.reduce((a,s)=>a+ +s.eggs_dozens,0), meat=S.sales.reduce((a,s)=>a+ +s.meat_kg,0);
   el("view").innerHTML=`
     <div class="grid-2" style="grid-template-columns:1fr 1fr">
@@ -605,9 +627,11 @@ function vReports(){
           <tr><td>Total Revenue</td><td class="num money v-emerald">${moneyT(rev)}</td></tr>
           <tr><td>Cash Collected</td><td class="num money">${moneyT(paid)}</td></tr>
           <tr><td>Outstanding Khata</td><td class="num money v-red">${moneyT(rev-paid)}</td></tr>
-          <tr><td>Total Expenses</td><td class="num money v-red">${moneyT(exp)}</td></tr>
-          <tr style="border-top:2px solid var(--line-2)"><td style="font-weight:800">Net ${net>=0?'Profit':'Loss'}</td>
-            <td class="num money ${net>=0?'v-emerald':'v-red'}" style="font-size:16px">${moneyT(net)}</td></tr>
+          <tr><td>Operating Cost</td><td class="num money v-red">${moneyT(opCost)}</td></tr>
+          <tr style="border-top:2px solid var(--line-2)"><td style="font-weight:800">Operating ${opProfit>=0?'Profit':'Loss'}</td>
+            <td class="num money ${opProfit>=0?'v-emerald':'v-red'}" style="font-size:16px">${moneyT(opProfit)}</td></tr>
+          <tr><td class="dt">Capital Invested (setup)</td><td class="num money">${moneyT(capex)}</td></tr>
+          <tr><td class="dt">Bird Investment (chicks)</td><td class="num money">${moneyT(bird)}</td></tr>
         </tbody></table></div></div>
       <div class="panel"><div class="ph"><span class="bar" style="background:var(--emerald)"></span><h3>Production &amp; Data</h3></div>
         <div class="pb"><table><tbody>
@@ -629,8 +653,8 @@ function exportCSV(type){
   let rows,head,name;
   if(type==="sales"){head=["Date","Customer","Eggs_Dozens","Price_Per_Dozen","Meat_kg","Total","Paid","Balance","Method"];
     rows=S.sales.map(s=>[s.sale_date,s.customer_name,s.eggs_dozens,s.price_per_dozen,s.meat_kg,s.total_amount,s.amount_paid,s.balance,s.payment_method]);name="henzo_sales";}
-  else{head=["Date","Category","Description","Flock","Qty","Amount"];
-    rows=S.expenses.map(e=>[e.expense_date,e.category,e.description,e.flock_scope,e.qty,e.amount]);name="henzo_expenses";}
+  else{head=["Date","Category","Type","Description","Flock","Qty","Amount"];
+    rows=S.expenses.map(e=>[e.expense_date,e.category,e.type,e.description,e.flock_scope,e.qty,e.amount]);name="henzo_expenses";}
   const csv=[head.join(","),...rows.map(r=>r.map(v=>`"${(v??"").toString().replace(/"/g,'""')}"`).join(","))].join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
   a.download=name+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();toast("Downloaded "+a.download);
