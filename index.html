@@ -418,7 +418,7 @@ function vDashboard(){
 function itemLabel(s){
   const p=[];
   if(+s.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(s.eggs_dozens)} dz</span>`);
-  if(+s.meat_birds>0) p.push(`<span class="chip meat">🍗 ${numf(s.meat_birds)} roaster${+s.meat_birds>1?'s':''}</span>`);
+  if(+s.meat_birds>0){const mi=parseMeatNote(s.notes);p.push(`<span class="chip meat">🍗 ${numf(s.meat_birds)} roaster${+s.meat_birds>1?'s':''}${mi.kg?` (${mi.kg}kg)`:''}</span>`);}
   if(+s.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(s.chicks)} chicks</span>`);
   return p.join(" ")||'<span class="chip misc">—</span>';
 }
@@ -516,7 +516,18 @@ function renderSalesRows(){
     ||`<tr><td colspan=8 class="empty"><div class="big">📋</div>No sales match</td></tr>`;
 }
 let s_touched=false;
+function parseMeatNote(notes){
+  const m=(notes||'').match(/Meat:\s*([\d.]+)kg @ Rs([\d.]+)\/kg/);
+  return m?{kg:+m[1],ppk:+m[2]}:{kg:0,ppk:0};
+}
+function buildNotesWithMeat(existingNotes,kg,ppk){
+  const cleaned=(existingNotes||'').replace(/Meat:\s*[\d.]+kg @ Rs[\d.]+\/kg = Rs[\d.]+;?\s*/,'').trim();
+  if(!(kg>0)) return cleaned||null;
+  const tag=`Meat: ${kg}kg @ Rs${ppk}/kg = Rs${Math.round(kg*ppk)}`;
+  return cleaned? `${cleaned}; ${tag}` : tag;
+}
 function saleForm(s,prefillName){const e=s||{};
+  const meatInfo=parseMeatNote(e.notes);
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${s?'Edit sale':'New sale'}</h3></div>
     <div class="form">
       <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
@@ -524,11 +535,13 @@ function saleForm(s,prefillName){const e=s||{};
         <datalist id="cl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
-      <div class="row2"><div class="field"><label>Roasters / Meat (birds)</label><input id="s_meat" type="number" value="${e.meat_birds||0}"></div>
+      <div class="row2"><div class="field"><label>Roasters / Meat (birds count)</label><input id="s_meat" type="number" value="${e.meat_birds||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div></div>
+      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="s_mkg" type="number" step="0.1" value="${meatInfo.kg||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Price / kg (meat)</label><input id="s_mppk" type="number" value="${meatInfo.ppk||1000}" oninput="calcTotal()"></div></div>
       <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true;checkOverpay()"></div>
         <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}" oninput="checkOverpay()"></div></div>
-      <div class="hint" id="s_hint">Fill eggs to auto-fill total</div>
+      <div class="hint" id="s_hint">Fill eggs and/or meat weight to auto-fill total</div>
       <div id="s_warn"></div>
       <div class="field"><label>Payment method</label><select id="s_method">
         <option ${e.payment_method==='Cash'?'selected':''}>Cash</option><option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
@@ -536,9 +549,16 @@ function saleForm(s,prefillName){const e=s||{};
       <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button></div></div>`);
   s_touched=!!s; calcTotal(); checkOverpay();
 }
-function calcTotal(){const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,t=dz*ppd;
-  if(t) el("s_hint").textContent=`Egg subtotal: ${moneyT(t)} — add meat value on top if any`;
-  if(!s_touched && t>0) el("s_total").value=t;}
+function calcTotal(){
+  const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,eggSub=dz*ppd;
+  const mkg=+el("s_mkg").value||0,mppk=+el("s_mppk").value||0,meatSub=mkg*mppk;
+  const t=eggSub+meatSub;
+  const parts=[];
+  if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
+  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
+  el("s_hint").textContent = parts.length ? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill eggs and/or meat weight to auto-fill total";
+  if(!s_touched && t>0) el("s_total").value=t;
+}
 function checkOverpay(){
   const total=+el("s_total").value||0, paidRaw=el("s_paid").value, paid=paidRaw===""?total:(+paidRaw||0);
   const w=el("s_warn"); if(!w) return;
@@ -553,9 +573,11 @@ async function saveSale(id){
     const ok=confirm("Paid is more than Total for this single sale.\n\nThis is usually a mistake — a second payment for a different item got typed into this sale.\n\nDo you still want to save it this way?");
     if(!ok) return;
   }
+  const mkg=+el("s_mkg").value||0, mppk=+el("s_mppk").value||0;
   const rec={sale_date:el("s_date").value,customer_name:name||null,eggs_dozens:+el("s_dz").value||0,
     price_per_dozen:+el("s_ppd").value||0,meat_birds:+el("s_meat").value||0,chicks:+el("s_chicks").value||0,
-    total_amount:total,amount_paid:pv,payment_method:el("s_method").value};
+    total_amount:total,amount_paid:pv,payment_method:el("s_method").value,
+    notes:buildNotesWithMeat(id?(S.sales.find(x=>x.id===id)||{}).notes:'',mkg,mppk)};
   try{
     let cid=null;
     if(name){let c=S.customers.find(x=>x.name.toLowerCase()===name.toLowerCase());
