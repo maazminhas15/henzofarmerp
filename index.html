@@ -169,11 +169,15 @@
   .field input,.field select{width:100%;padding:11px 13px;border:1px solid var(--line-2);border-radius:11px;background:#fff}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .hint{font-size:12px;color:var(--indigo);font-weight:600;background:var(--indigo-soft);padding:8px 11px;border-radius:9px}
+  .warn{font-size:12px;color:var(--red);font-weight:700;background:var(--red-soft);padding:8px 11px;border-radius:9px}
   .macts{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
 
   .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-size:13.5px;font-weight:600;z-index:80;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow-lg)}
   .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
   .toast.err{background:var(--red)} .toast.ok{background:var(--emerald)}
+
+  .banner{max-width:1240px;margin:14px auto 0;padding:12px 18px;border-radius:12px;background:var(--amber-soft);color:#92660a;font-weight:700;font-size:13px;display:flex;align-items:center;gap:10px;justify-content:space-between}
+  .banner button{background:var(--amber);color:#fff;padding:7px 12px;border-radius:8px;font-weight:700;font-size:12.5px}
 
   /* Setup / PIN */
   .center{min-height:100vh;display:grid;place-items:center;padding:20px}
@@ -228,6 +232,7 @@
     <button data-tab="flocks">Flocks</button>
     <button data-tab="reports">Reports</button>
   </nav>
+  <div id="backupBanner"></div>
   <main id="view"></main>
 </div>
 
@@ -250,7 +255,7 @@ else{
 el("pinInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")checkPin();});
 function checkPin(){ if(el("pinInput").value===APP_PIN){sessionStorage.setItem("henzo_ok","1");hide("pinscreen");startApp();}
   else{el("pinErr").style.display="block";el("pinInput").value="";} }
-function startApp(){ show("app"); el("hdate").textContent=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}); loadAll(); }
+function startApp(){ show("app"); el("hdate").textContent=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}); loadAll(); checkBackupReminder(); }
 
 /* ---------- Helpers ---------- */
 const R=n=>Math.round(Number(n)||0).toLocaleString("en-PK");
@@ -272,7 +277,8 @@ const ICN={
   edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L18 10l-4-4L4 16z"/></svg>',
   del:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
   plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>',
-  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>'
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>'
 };
 
 /* ---------- Data (cache-first = instant load) ---------- */
@@ -327,6 +333,29 @@ function ensureChart(){ if(window.Chart) return Promise.resolve();
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(_){}});charts={};}
 function render(){destroyCharts();({dashboard:vDashboard,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
 function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();}
+
+/* ---------- BACKUP (full data download + weekly reminder) ---------- */
+const BACKUP_KEY="henzo_last_backup";
+function downloadFullBackup(silent){
+  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="henzo_full_backup_"+new Date().toISOString().slice(0,10)+".json";
+  a.click();
+  localStorage.setItem(BACKUP_KEY,new Date().toISOString());
+  if(!silent) toast("Backup downloaded");
+  checkBackupReminder();
+}
+function checkBackupReminder(){
+  const last=localStorage.getItem(BACKUP_KEY);
+  const days=last?Math.floor((Date.now()-new Date(last).getTime())/86400000):999;
+  const host=el("backupBanner"); if(!host) return;
+  if(days>=7){
+    host.innerHTML=`<div class="banner"><span>💾 ${last?`It's been ${days} days since your last backup.`:'You have never downloaded a backup.'} Download one now to keep your data safe.</span>
+      <button onclick="downloadFullBackup()">Download Backup</button></div>`;
+  } else host.innerHTML="";
+}
 
 /* ---------- DASHBOARD ---------- */
 function vDashboard(){
@@ -442,13 +471,15 @@ async function drawDonut(total){
 }
 
 /* ---------- SALES ---------- */
-let sf={q:"",item:"all",method:"all"};
+let sf={q:"",item:"all",method:"all",from:"",to:""};
 function vSales(){
   el("view").innerHTML=`
     <div class="toolbar">
       <div class="search">${ICN.search}<input id="q" placeholder="Search customer…" value="${sf.q}" oninput="sf.q=this.value;renderSalesRows()"></div>
       <select class="sel" onchange="sf.item=this.value;renderSalesRows()"><option value="all">All items</option><option value="eggs">Eggs</option><option value="meat">Roasters/Meat</option><option value="chicks">Chicks</option></select>
       <select class="sel" onchange="sf.method=this.value;renderSalesRows()"><option value="all">All methods</option><option>Cash</option><option>Online</option></select>
+      <input class="sel" type="date" title="From date" value="${sf.from}" onchange="sf.from=this.value;renderSalesRows()">
+      <input class="sel" type="date" title="To date" value="${sf.to}" onchange="sf.to=this.value;renderSalesRows()">
       <button class="btn" onclick="saleForm()">${ICN.plus} New Sale</button>
     </div>
     <div class="strip" id="salesStrip"></div>
@@ -464,6 +495,8 @@ function filteredSales(){
     if(sf.item==="meat" && !(+s.meat_birds>0)) return false;
     if(sf.item==="chicks" && !(+s.chicks>0)) return false;
     if(sf.method!=="all" && s.payment_method!==sf.method) return false;
+    if(sf.from && s.sale_date<sf.from) return false;
+    if(sf.to && s.sale_date>sf.to) return false;
     return true;
   });
 }
@@ -483,31 +516,43 @@ function renderSalesRows(){
     ||`<tr><td colspan=8 class="empty"><div class="big">📋</div>No sales match</td></tr>`;
 }
 let s_touched=false;
-function saleForm(s){const e=s||{};
+function saleForm(s,prefillName){const e=s||{};
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${s?'Edit sale':'New sale'}</h3></div>
     <div class="form">
       <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Customer</label><input id="s_cust" list="cl" value="${(e.customer_name||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
+      <div class="field"><label>Customer</label><input id="s_cust" list="cl" value="${(e.customer_name||prefillName||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
         <datalist id="cl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
       <div class="row2"><div class="field"><label>Roasters / Meat (birds)</label><input id="s_meat" type="number" value="${e.meat_birds||0}"></div>
         <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div></div>
-      <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true"></div>
-        <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}"></div></div>
+      <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true;checkOverpay()"></div>
+        <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}" oninput="checkOverpay()"></div></div>
       <div class="hint" id="s_hint">Fill eggs to auto-fill total</div>
+      <div id="s_warn"></div>
       <div class="field"><label>Payment method</label><select id="s_method">
         <option ${e.payment_method==='Cash'?'selected':''}>Cash</option><option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button></div></div>`);
-  s_touched=!!s; calcTotal();
+  s_touched=!!s; calcTotal(); checkOverpay();
 }
 function calcTotal(){const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,t=dz*ppd;
   if(t) el("s_hint").textContent=`Egg subtotal: ${moneyT(t)} — add meat value on top if any`;
   if(!s_touched && t>0) el("s_total").value=t;}
+function checkOverpay(){
+  const total=+el("s_total").value||0, paidRaw=el("s_paid").value, paid=paidRaw===""?total:(+paidRaw||0);
+  const w=el("s_warn"); if(!w) return;
+  if(paid>total){
+    w.innerHTML=`<div class="warn">⚠️ Paid (${moneyT(paid)}) is more than Total (${moneyT(total)}). This usually means a payment for a DIFFERENT sale got typed here by mistake. If this customer is paying for something else too (e.g. eggs + meat), cancel and create a SEPARATE sale for that instead.</div>`;
+  } else w.innerHTML="";
+}
 async function saveSale(id){
   const name=el("s_cust").value.trim(), total=+el("s_total").value||0;
   let pv=el("s_paid").value; pv=pv===""?total:(+pv||0);
+  if(pv>total){
+    const ok=confirm("Paid is more than Total for this single sale.\n\nThis is usually a mistake — a second payment for a different item got typed into this sale.\n\nDo you still want to save it this way?");
+    if(!ok) return;
+  }
   const rec={sale_date:el("s_date").value,customer_name:name||null,eggs_dozens:+el("s_dz").value||0,
     price_per_dozen:+el("s_ppd").value||0,meat_birds:+el("s_meat").value||0,chicks:+el("s_chicks").value||0,
     total_amount:total,amount_paid:pv,payment_method:el("s_method").value};
@@ -523,13 +568,15 @@ async function saveSale(id){
 }
 
 /* ---------- EXPENSES ---------- */
-let ef={q:"",cat:"all"};
+let ef={q:"",cat:"all",from:"",to:""};
 function vExpenses(){
   const cats=[...new Set(S.expenses.map(e=>e.category))];
   el("view").innerHTML=`
     <div class="toolbar">
       <div class="search">${ICN.search}<input placeholder="Search description…" value="${ef.q}" oninput="ef.q=this.value;renderExpRows()"></div>
       <select class="sel" onchange="ef.cat=this.value;renderExpRows()"><option value="all">All categories</option>${cats.map(c=>`<option>${c}</option>`).join("")}</select>
+      <input class="sel" type="date" title="From date" value="${ef.from}" onchange="ef.from=this.value;renderExpRows()">
+      <input class="sel" type="date" title="To date" value="${ef.to}" onchange="ef.to=this.value;renderExpRows()">
       <button class="btn" onclick="expForm()">${ICN.plus} New Expense</button>
     </div>
     <div class="strip" id="expStrip"></div>
@@ -552,22 +599,37 @@ function feedHistoryHTML(){
   const closed=rows.filter(r=>!r.ongoing && r.days>0);
   const avgDays=closed.length?Math.round(closed.reduce((a,r)=>a+r.days,0)/closed.length):0;
   const avgCostDay=closed.length?Math.round(closed.reduce((a,r)=>a+ +r.amount,0)/closed.reduce((a,r)=>a+r.days,0)):0;
+  const lastFeed=feeds[feeds.length-1];
+  const daysSinceLast=Math.max(0,Math.round((today-new Date(lastFeed.expense_date))/86400000));
+  const overdue = avgDays>0 && daysSinceLast>avgDays;
   const body=last5.map(f=>{
     const bought = +f.qty>0 ? `${numf(f.qty)} ${f.unit||'kg'}` : (f.description||'Feed');
     return `<tr><td class="dt">${fmtDate(f.expense_date)}</td><td>${bought}</td>
       <td class="num money">${moneyT(f.amount)}</td>
       <td class="num">${f.ongoing?`<span class="clr">${f.days} days so far</span>`:`<b>${f.days} days</b>`}</td></tr>`;
   }).join("");
-  return `<div class="panel"><div class="ph"><span class="bar" style="background:var(--emerald)"></span>
+  return `<div class="panel" style="margin-bottom:16px"><div class="ph"><span class="bar" style="background:var(--emerald)"></span>
       <h3>Feed History — how long each purchase lasts</h3><span class="sp"></span>
       <span class="chip feed">Avg ~${avgDays} days · ${moneyT(avgCostDay)}/day</span></div>
+    <div class="pb" style="padding-top:0">
+      <div class="${overdue?'warn':'hint'}" style="margin-bottom:12px">
+        ${overdue?`⚠️ It's been ${daysSinceLast} days since the last feed purchase (${fmtDate(lastFeed.expense_date)}) — that's longer than your usual ~${avgDays} days. You may be close to running out, or a recent purchase wasn't logged.`
+        :`Last feed bought ${daysSinceLast} day${daysSinceLast===1?'':'s'} ago (${fmtDate(lastFeed.expense_date)}). Usually lasts ~${avgDays} days.`}
+      </div>
+    </div>
     <div class="twrap"><table><thead><tr><th>Date</th><th>Bought</th><th class="num">Cost</th><th class="num">Lasted</th></tr></thead>
     <tbody>${body}</tbody></table></div></div>`;
 }
-function renderExpRows(){
-  const list=S.expenses.filter(e=>{
+function filteredExpenses(){
+  return S.expenses.filter(e=>{
     if(ef.q && !(e.description||"").toLowerCase().includes(ef.q.toLowerCase())) return false;
-    if(ef.cat!=="all" && e.category!==ef.cat) return false; return true;});
+    if(ef.cat!=="all" && e.category!==ef.cat) return false;
+    if(ef.from && e.expense_date<ef.from) return false;
+    if(ef.to && e.expense_date>ef.to) return false;
+    return true;});
+}
+function renderExpRows(){
+  const list=filteredExpenses();
   const total=list.reduce((a,e)=>a+ +e.amount,0);
   const byC={}; list.forEach(e=>byC[e.category]=(byC[e.category]||0)+ +e.amount);
   const top=Object.entries(byC).sort((a,b)=>b[1]-a[1])[0];
@@ -630,11 +692,28 @@ function vCustomers(){
     </div>
     <div class="toolbar"><div style="flex:1"></div><button class="btn" onclick="custForm()">${ICN.plus} Add Customer</button></div>
     <div class="tcard"><div class="twrap"><table>
-      <thead><tr><th>Customer</th><th class="num">Sales</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Balance</th></tr></thead>
-      <tbody>${b.map(c=>`<tr><td class="cust">${c.name}</td><td class="num">${numf(c.transactions)}</td>
+      <thead><tr><th>Customer</th><th class="num">Sales</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Balance</th><th class="num">Actions</th></tr></thead>
+      <tbody>${b.map(c=>`<tr><td class="cust" style="cursor:pointer" onclick="custHistory('${c.name.replace(/'/g,"\\'")}')">${c.name}</td><td class="num">${numf(c.transactions)}</td>
         <td class="num money">${moneyT(c.billed)}</td><td class="num clr">${moneyT(c.received)}</td>
-        <td class="num">${+c.outstanding>0?`<span class="due">${moneyT(c.outstanding)}</span>`:`<span class="clr">Clear</span>`}</td></tr>`).join("")
-        ||'<tr><td colspan=5 class="empty">No customers</td></tr>'}</tbody></table></div></div>`;
+        <td class="num">${+c.outstanding>0?`<span class="due">${moneyT(c.outstanding)}</span>`:`<span class="clr">Clear</span>`}</td>
+        <td class="num"><button class="btn ghost sm" onclick="saleForm(null,'${c.name.replace(/'/g,"\\'")}')">+ Sale/Payment</button></td></tr>`).join("")
+        ||'<tr><td colspan=6 class="empty">No customers</td></tr>'}</tbody></table></div></div>`;
+}
+function custHistory(name){
+  const rows=S.sales.filter(s=>(s.customer_name||'')===name).sort((a,b)=>new Date(b.sale_date)-new Date(a.sale_date));
+  const billed=rows.reduce((a,s)=>a+ +s.total_amount,0), received=rows.reduce((a,s)=>a+ +s.amount_paid,0);
+  openModal(`<div class="modal" style="max-width:640px"><div class="mh"><span class="bar"></span><h3>${name} — full history</h3></div>
+    <div class="pb" style="padding:16px 22px">
+      <div class="strip" style="margin-bottom:14px"><div class="s"><div class="l">Billed</div><div class="v">${moneyT(billed)}</div></div>
+        <div class="s"><div class="l">Received</div><div class="v v-emerald">${moneyT(received)}</div></div>
+        <div class="s"><div class="l">Balance</div><div class="v ${billed-received>0?'v-red':'v-emerald'}">${moneyT(billed-received)}</div></div></div>
+      <div class="twrap"><table><thead><tr><th>Date</th><th>Items</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+      <tbody>${rows.map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td>${itemLabel(s)}</td>
+        <td class="num money">${moneyT(s.total_amount)}</td><td class="num clr">${moneyT(s.amount_paid)}</td>
+        <td class="num">${+s.balance>0?`<span class="due">${moneyT(s.balance)}</span>`:`<span class="clr">✓</span>`}</td></tr>`).join("")
+        ||'<tr><td colspan=5 class="empty">No sales</td></tr>'}</tbody></table></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Close</button>
+      <button class="btn" onclick="closeModal();saleForm(null,'${name.replace(/'/g,"\\'")}')">${ICN.plus} New sale for ${name}</button></div></div>`);
 }
 function custForm(){openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Add customer</h3></div>
   <div class="form"><div class="field"><label>Name</label><input id="c_name" placeholder="e.g. Jabeen Aunty"></div>
@@ -724,8 +803,12 @@ function vReports(){
       <div class="pb" style="display:flex;gap:12px;flex-wrap:wrap">
         <button class="btn ghost" onclick="exportCSV('sales')">⬇ Export Sales (CSV)</button>
         <button class="btn ghost" onclick="exportCSV('expenses')">⬇ Export Expenses (CSV)</button>
+        <button class="btn" onclick="downloadFullBackup()">${ICN.download} Download Full Backup (JSON)</button>
         <button class="btn ghost" onclick="window.print()">🖨 Print this report</button>
-      </div></div>`;
+      </div>
+      <div class="pb" style="padding-top:0"><span class="hint" id="lastBackupHint"></span></div></div>`;
+  const last=localStorage.getItem(BACKUP_KEY);
+  el("lastBackupHint").textContent = last ? `Last full backup: ${new Date(last).toLocaleString()}` : "You haven't downloaded a full backup yet.";
 }
 function exportCSV(type){
   let rows,head,name;
