@@ -285,7 +285,7 @@ const ICN={
 
 /* ---------- Data (cache-first = instant load) ---------- */
 const CACHE_KEY="henzo_cache_v4";
-function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses}));}catch(e){}}
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
 function computeBalances(){
   const m={};
@@ -306,7 +306,7 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
 async function loadAll(){
   // 1) instant paint from device cache
   const c=loadCache();
-  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
+  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
   else { el("view").innerHTML=`<div class="empty"><div class="big">🐔</div>Loading farm data…</div>`; }
   // 2) background refresh from cloud
   try{
@@ -497,7 +497,7 @@ function orderItemLabel(o){
   return p.join(" ")||'<span class="chip misc">—</span>';
 }
 function renderOrderRows(){
-  let list=S.orders;
+  let list=S.orders||[];
   if(of.view==='pending') list=list.filter(o=>o.status==='Pending');
   else if(of.view==='delivered') list=list.filter(o=>o.status==='Delivered');
   else if(of.view==='cancelled') list=list.filter(o=>o.status==='Cancelled');
@@ -670,7 +670,7 @@ function printInvoice(o){
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
     @media print{button{display:none}}
   </style></head><body>
-    <h1>🥚 HENZO FARM</h1><div class="sub"> Contact Number :+923115190548· Islamabad</div>
+    <h1>🥚 HENZO FARM</h1><div class="sub">Free-range heritage poultry · Islamabad</div>
     <div class="box">
       <div class="grid">
         <div><b>Order #</b><br>${o.order_number||'—'}</div>
