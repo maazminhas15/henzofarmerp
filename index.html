@@ -243,6 +243,7 @@
 <script>
 /* ---------- Boot ---------- */
 let db=null;
+let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
 const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length>20;
 const el=id=>document.getElementById(id);
 const show=(id,d="block")=>el(id).style.display=d, hide=id=>el(id).style.display="none";
@@ -283,7 +284,6 @@ const ICN={
 };
 
 /* ---------- Data (cache-first = instant load) ---------- */
-let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
 const CACHE_KEY="henzo_cache_v4";
 function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
