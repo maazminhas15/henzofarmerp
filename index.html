@@ -251,7 +251,7 @@ const show=(id,d="block")=>el(id).style.display=d, hide=id=>el(id).style.display
 if(!configured){ show("setup","grid"); }
 else{
   db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
-  if(sessionStorage.getItem("henzo_ok")==="1") startApp();
+  if(sessionStorage.getItem("henzo_ok")==="1") setTimeout(startApp,0);
   else { show("pinscreen","grid"); el("pinInput").focus(); }
 }
 el("pinInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")checkPin();});
@@ -415,7 +415,7 @@ function vDashboard(){
         <td class="num">${+s.balance>0?`<span class="due">${moneyT(s.balance)}</span>`:`<span class="clr">Paid</span>`}</td></tr>`).join("")
         ||'<tr><td colspan=5 class="empty">No sales yet</td></tr>'}</tbody></table></div></div>`;
 
-  drawCashChart(); drawDonut(totalSpent);
+  drawCashChart().catch(()=>{}); drawDonut(totalSpent).catch(()=>{});
 }
 function itemLabel(s){
   const p=[];
