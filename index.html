@@ -226,6 +226,7 @@
   </header>
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="orders">Orders</button>
     <button data-tab="sales">Sales Ledger</button>
     <button data-tab="expenses">Expenses Ledger</button>
     <button data-tab="customers">Customers</button>
@@ -282,7 +283,7 @@ const ICN={
 };
 
 /* ---------- Data (cache-first = instant load) ---------- */
-let S={flocks:[],customers:[],sales:[],expenses:[],balances:[]}, currentTab="dashboard", charts={};
+let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
 const CACHE_KEY="henzo_cache_v4";
 function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
@@ -309,14 +310,15 @@ async function loadAll(){
   else { el("view").innerHTML=`<div class="empty"><div class="big">🐔</div>Loading farm data…</div>`; }
   // 2) background refresh from cloud
   try{
-    const [fl,cu,sa,ex]=await Promise.all([
+    const [fl,cu,sa,ex,or]=await Promise.all([
       db.from("flocks").select("*").order("purchased"),
       db.from("customers").select("*").order("name"),
       db.from("sales").select("*").order("sale_date",{ascending:false}),
-      db.from("expenses").select("*").order("expense_date",{ascending:false})
+      db.from("expenses").select("*").order("expense_date",{ascending:false}),
+      db.from("orders").select("*").order("delivery_date",{ascending:true})
     ]);
     for(const r of [fl,cu,sa,ex]) if(r.error) throw r.error;
-    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,balances:[]}; S.balances=computeBalances();
+    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,balances:[]}; S.balances=computeBalances();
     saveCache(); render(); setSync('synced');
   }catch(e){
     if(!(c&&c.sales)) el("view").innerHTML=`<div class="empty"><div class="big">⚠️</div><b>Couldn't load data</b><br>
@@ -331,7 +333,7 @@ function ensureChart(){ if(window.Chart) return Promise.resolve();
   return _chartP||(_chartP=new Promise((res,rej)=>{const s=document.createElement('script');
     s.src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);}));}
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(_){}});charts={};}
-function render(){destroyCharts();({dashboard:vDashboard,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
+function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
 function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();}
 
 /* ---------- BACKUP (full data download + weekly reminder) ---------- */
@@ -468,6 +470,227 @@ async function drawDonut(total){
     const pc=total?((v/total)*100).toFixed(0):0;
     return `<div class="row"><span class="dot" style="background:${colors[i]}"></span><span class="nm">${k}</span>
       <span class="sp"></span><span class="amt">${moneyT(v)}</span><span class="pc">${pc}%</span></div>`;}).join("");
+}
+
+/* ---------- ORDERS (pending, not yet delivered) ---------- */
+let of={view:"pending"};
+function vOrders(){
+  el("view").innerHTML=`
+    <div class="toolbar">
+      <select class="sel" onchange="of.view=this.value;renderOrderRows()">
+        <option value="pending" ${of.view==='pending'?'selected':''}>Pending / Scheduled</option>
+        <option value="delivered" ${of.view==='delivered'?'selected':''}>Delivered</option>
+        <option value="cancelled" ${of.view==='cancelled'?'selected':''}>Cancelled</option>
+        <option value="all" ${of.view==='all'?'selected':''}>All Orders</option>
+      </select>
+      <div style="flex:1"></div>
+      <button class="btn" onclick="orderForm()">${ICN.plus} New Order</button>
+    </div>
+    <div id="ordersGroups"></div>`;
+  renderOrderRows();
+}
+function orderItemLabel(o){
+  const p=[];
+  if(+o.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(o.eggs_dozens)} dz</span>`);
+  if(+o.meat_kg>0) p.push(`<span class="chip meat">🍗 ${numf(o.meat_kg)}kg</span>`);
+  if(+o.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(o.chicks)} chicks</span>`);
+  return p.join(" ")||'<span class="chip misc">—</span>';
+}
+function renderOrderRows(){
+  let list=S.orders;
+  if(of.view==='pending') list=list.filter(o=>o.status==='Pending');
+  else if(of.view==='delivered') list=list.filter(o=>o.status==='Delivered');
+  else if(of.view==='cancelled') list=list.filter(o=>o.status==='Cancelled');
+
+  if(!list.length){ el("ordersGroups").innerHTML=`<div class="tcard"><div class="empty"><div class="big">📦</div>No orders here</div></div>`; return; }
+
+  // group by delivery date so it reads like a daily delivery checklist
+  const groups={};
+  list.forEach(o=>{ const k=o.delivery_date||'No date set'; (groups[k]=groups[k]||[]).push(o); });
+  const dateKeys=Object.keys(groups).sort((a,b)=> a==='No date set'?1 : b==='No date set'?-1 : new Date(a)-new Date(b));
+
+  const today=new Date().toISOString().slice(0,10);
+  el("ordersGroups").innerHTML=dateKeys.map(dk=>{
+    const rows=groups[dk];
+    const dayTotal=rows.reduce((a,o)=>a+ +o.total_amount,0);
+    const label = dk==='No date set' ? 'No date set' : (dk===today ? `${fmtDate(dk)} — TODAY` : fmtDate(dk));
+    return `<div class="tcard" style="margin-bottom:14px">
+      <div class="ph" style="padding:14px 18px"><span class="bar" style="${dk===today?'background:var(--red)':''}"></span>
+        <h3 style="font-size:14px">${label}</h3><span class="sp"></span>
+        <span class="chip misc">${rows.length} order${rows.length>1?'s':''} · ${moneyT(dayTotal)}</span></div>
+      <div class="twrap"><table>
+        <thead><tr><th>Order #</th><th>Customer</th><th>Phone</th><th>Items</th><th class="num">Total</th><th>Status</th><th class="num">Actions</th></tr></thead>
+        <tbody>${rows.map(o=>`<tr>
+          <td class="dt">${o.order_number||'—'}</td><td class="cust">${o.customer_name}</td><td class="dt">${o.phone||'—'}</td>
+          <td>${orderItemLabel(o)}</td><td class="num money">${moneyT(o.total_amount)}</td>
+          <td><span class="chip ${o.status==='Delivered'?'online':o.status==='Cancelled'?'meat':'cash'}">${o.status}</span></td>
+          <td class="num" style="white-space:nowrap">
+            <button class="iconbtn" title="Print bill" onclick='printInvoice(${JSON.stringify(o)})'>🖨️</button>
+            ${o.status==='Pending'?`<button class="iconbtn" onclick='orderForm(${JSON.stringify(o)})'>${ICN.edit}</button>
+            <button class="btn sm" style="background:var(--emerald)" onclick='deliverOrder(${JSON.stringify(o)})'>Delivered</button>
+            <button class="btn ghost sm" style="color:var(--red)" onclick='cancelOrder(${JSON.stringify(o)})'>Cancel</button>`:''}
+            <button class="iconbtn del" onclick="delRow('orders','${o.id}');" title="Delete order">${ICN.del}</button>
+          </td></tr>`).join("")}</tbody></table></div></div>`;
+  }).join("");
+}
+async function cancelOrder(o){
+  if(!confirm(`Cancel order ${o.order_number||''} for ${o.customer_name}? This will NOT delete it — it just marks it Cancelled and removes it from your delivery list.`)) return;
+  try{
+    const {data:fresh,error:e0}=await db.from("orders").select("status").eq("id",o.id).single(); if(e0)throw e0;
+    if(fresh.status==='Delivered'){toast("This order was already delivered — can't cancel it.",'err');await loadAll();return;}
+    const {error}=await db.from("orders").update({status:'Cancelled'}).eq("id",o.id); if(error)throw error;
+    toast("Order cancelled"); await loadAll();
+  }catch(e){toast(e.message,'err');}
+}
+let o_touched=false;
+function nextOrderNumber(){
+  const nums=S.orders.map(o=>+((o.order_number||'').match(/\d+/)||[0])[0]).filter(n=>n>0);
+  const next=(nums.length?Math.max(...nums):1024)+1;
+  return "HF-"+next;
+}
+function orderForm(x){const o=x||{};
+  const d=new Date(); d.setDate(d.getDate()+2);
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit order':'New order'}</h3></div>
+    <div class="form">
+      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" value="${(o.customer_name||'').replace(/"/g,'&quot;')}">
+        <datalist id="ocl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
+      <div class="row2"><div class="field"><label>Phone</label><input id="o_phone" value="${(o.phone||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Delivery date</label><input id="o_date" type="date" value="${o.delivery_date||d.toISOString().slice(0,10)}"></div></div>
+      <div class="field"><label>Address</label><input id="o_addr" value="${(o.address||'').replace(/"/g,'&quot;')}" placeholder="House, street, area"></div>
+      <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="o_dz" type="number" step="0.5" value="${o.eggs_dozens||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / dozen</label><input id="o_ppd" type="number" value="${o.price_per_dozen||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="o_mkg" type="number" step="0.1" value="${o.meat_kg||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / kg</label><input id="o_mppk" type="number" value="${o.price_per_kg||1000}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Chicks (count)</label><input id="o_chicks" type="number" value="${o.chicks||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / chick</label><input id="o_cp" type="number" value="${o.chick_price||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Delivery charge</label><input id="o_dc" type="number" value="${o.delivery_charge||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Discount</label><input id="o_disc" type="number" value="${o.discount||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="field"><label>Order Total (PKR)</label><input id="o_total" type="number" value="${o.total_amount||0}" oninput="o_touched=true"></div>
+      <div class="hint" id="o_hint"></div>
+      <div class="field"><label>Notes (optional)</label><input id="o_notes" value="${(o.notes||'').replace(/"/g,'&quot;')}"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveOrder('${x?x.id:''}')">${x?'Update order':'Save order'}</button></div></div>`);
+  o_touched=!!x; calcOrderTotal();
+}
+function calcOrderTotal(){
+  const dz=+el("o_dz").value||0, ppd=+el("o_ppd").value||0, eggSub=dz*ppd;
+  const mkg=+el("o_mkg").value||0, mppk=+el("o_mppk").value||0, meatSub=mkg*mppk;
+  const ch=+el("o_chicks").value||0, cp=+el("o_cp").value||0, chickSub=ch*cp;
+  const dc=+el("o_dc").value||0, disc=+el("o_disc").value||0;
+  const t=Math.max(0,eggSub+meatSub+chickSub+dc-disc);
+  const parts=[];
+  if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
+  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
+  if(chickSub) parts.push(`Chicks ${moneyT(chickSub)}`);
+  if(dc) parts.push(`Delivery ${moneyT(dc)}`);
+  if(disc) parts.push(`− Discount ${moneyT(disc)}`);
+  el("o_hint").textContent = parts.length? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill in items to auto-fill total";
+  if(!o_touched && t>0) el("o_total").value=t;
+}
+async function saveOrder(id){
+  const name=el("o_name").value.trim();
+  if(!name){toast("Enter a customer name",'err');return;}
+  const rec={
+    order_number: id ? undefined : nextOrderNumber(),
+    customer_name:name, phone:el("o_phone").value.trim()||null, address:el("o_addr").value.trim()||null,
+    delivery_date:el("o_date").value||null,
+    eggs_dozens:+el("o_dz").value||0, price_per_dozen:+el("o_ppd").value||0,
+    meat_kg:+el("o_mkg").value||0, price_per_kg:+el("o_mppk").value||0,
+    chicks:+el("o_chicks").value||0, chick_price:+el("o_cp").value||0,
+    delivery_charge:+el("o_dc").value||0, discount:+el("o_disc").value||0,
+    total_amount:+el("o_total").value||0, notes:el("o_notes").value.trim()||null
+  };
+  try{
+    const {error}= id? await db.from("orders").update(rec).eq("id",id) : await db.from("orders").insert({...rec,status:'Pending'});
+    if(error)throw error; toast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error — did you run add_orders_table.sql in Supabase yet?",'err');}
+}
+
+/* ---------- Deliver order -> payment popup -> pushes into Sales Ledger ---------- */
+function deliverOrder(o){
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Complete Order ${o.order_number||''}</h3></div>
+    <div class="form">
+      <div class="strip" style="margin:0"><div class="s"><div class="l">Customer</div><div class="v" style="font-size:15px">${o.customer_name}</div></div>
+        <div class="s"><div class="l">Order Total</div><div class="v">${moneyT(o.total_amount)}</div></div></div>
+      <div class="field"><label>Amount Collected (PKR)</label><input id="d_paid" type="number" value="${o.total_amount}" oninput="calcDeliverBalance(${o.total_amount})"></div>
+      <div class="field"><label>Payment method</label><select id="d_method"><option>Cash</option><option>Online</option><option>Other</option></select></div>
+      <div class="hint" id="d_hint"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick='confirmDeliver(${JSON.stringify(o)})'>Confirm &amp; Complete Order</button></div></div>`);
+  calcDeliverBalance(o.total_amount);
+}
+function calcDeliverBalance(total){
+  const paid=+el("d_paid").value||0, bal=total-paid;
+  el("d_hint").textContent = bal>0 ? `Balance remaining: ${moneyT(bal)} (Partially Paid)` : bal<0 ? `Overpaid by ${moneyT(-bal)} — please check the amount` : `Paid in full ✓`;
+}
+async function confirmDeliver(o){
+  const paid=+el("d_paid").value||0, method=el("d_method").value;
+  try{
+    // 1) find fresh order state to avoid double-processing
+    const {data:fresh,error:e0}=await db.from("orders").select("status").eq("id",o.id).single();
+    if(e0)throw e0;
+    if(fresh.status==='Delivered'){toast("This order has already been completed.",'err');closeModal();await loadAll();return;}
+    // 2) create the sale in the existing Sales Ledger (reusing existing schema/table)
+    let cid=null;
+    if(o.customer_name){let c=S.customers.find(x=>x.name.toLowerCase()===o.customer_name.toLowerCase());
+      if(!c){const{data,error}=await db.from("customers").insert({name:o.customer_name,phone:o.phone||null}).select().single();if(error)throw error;c=data;}
+      cid=c.id;}
+    const notes=buildNotesWithMeat(`Order ${o.order_number||''}`.trim(), +o.meat_kg||0, +o.price_per_kg||0);
+    const saleRec={sale_date:new Date().toISOString().slice(0,10),customer_id:cid,customer_name:o.customer_name,
+      eggs_dozens:o.eggs_dozens||0,price_per_dozen:o.price_per_dozen||0,meat_birds:o.meat_birds||0,chicks:o.chicks||0,
+      total_amount:o.total_amount,amount_paid:paid,payment_method:method,notes};
+    const{error:e1}=await db.from("sales").insert(saleRec); if(e1)throw e1;
+    // 3) mark the order delivered (never delete — keeps it in Order History)
+    const{error:e2}=await db.from("orders").update({status:'Delivered',delivered_at:new Date().toISOString()}).eq("id",o.id); if(e2)throw e2;
+    toast("Order delivered — added to Sales Ledger"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error",'err');}
+}
+
+/* ---------- Printable Henzo Farm bill ---------- */
+function printInvoice(o){
+  const eggSub=(+o.eggs_dozens||0)*(+o.price_per_dozen||0);
+  const meatSub=(+o.meat_kg||0)*(+o.price_per_kg||0);
+  const chickSub=(+o.chicks||0)*(+o.chick_price||0);
+  const rows=[];
+  if(+o.eggs_dozens>0) rows.push(`<tr><td>Eggs</td><td>${numf(o.eggs_dozens)} dozen</td><td>${moneyT(o.price_per_dozen)}</td><td>${moneyT(eggSub)}</td></tr>`);
+  if(+o.meat_kg>0) rows.push(`<tr><td>Meat</td><td>${numf(o.meat_kg)} kg</td><td>${moneyT(o.price_per_kg)}</td><td>${moneyT(meatSub)}</td></tr>`);
+  if(+o.chicks>0) rows.push(`<tr><td>Chicks</td><td>${numf(o.chicks)}</td><td>${moneyT(o.chick_price)}</td><td>${moneyT(chickSub)}</td></tr>`);
+  const w=window.open('','_blank');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${o.order_number||'Invoice'} - Henzo Farm</title>
+  <style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2233;max-width:640px;margin:24px auto;padding:0 16px}
+    h1{color:#10b981;font-size:26px;margin:0}
+    .sub{color:#6b7488;font-size:13px;margin-top:2px}
+    .box{border:1px solid #e4e6ef;border-radius:10px;padding:16px;margin-top:18px}
+    table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13.5px}
+    th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #edeef4}
+    th{color:#6b7488;text-transform:uppercase;font-size:11px}
+    .r{text-align:right}
+    .tot{font-size:18px;font-weight:800;margin-top:10px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
+    @media print{button{display:none}}
+  </style></head><body>
+    <h1>🥚 HENZO FARM</h1><div class="sub">Free-range heritage poultry · Islamabad</div>
+    <div class="box">
+      <div class="grid">
+        <div><b>Order #</b><br>${o.order_number||'—'}</div>
+        <div><b>Delivery Date</b><br>${fmtDate(o.delivery_date)}</div>
+        <div><b>Customer</b><br>${o.customer_name}</div>
+        <div><b>Phone</b><br>${o.phone||'—'}</div>
+      </div>
+      ${o.address?`<div style="margin-top:8px"><b>Address</b><br>${o.address}</div>`:''}
+    </div>
+    <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th class="r">Total</th></tr></thead>
+    <tbody>${rows.join("")||'<tr><td colspan=4>No items</td></tr>'}</tbody></table>
+    <div style="text-align:right;margin-top:10px">
+      ${+o.delivery_charge>0?`<div>Delivery: ${moneyT(o.delivery_charge)}</div>`:''}
+      ${+o.discount>0?`<div>Discount: −${moneyT(o.discount)}</div>`:''}
+      <div class="tot">Grand Total: ${moneyT(o.total_amount)}</div>
+      ${o.status==='Delivered'?`<div style="color:#10b981;font-weight:700;margin-top:4px">✓ Delivered</div>`:`<div style="color:#f59e0b;font-weight:700;margin-top:4px">Status: ${o.status}</div>`}
+    </div>
+    <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Print / Save as PDF</button>
+  </body></html>`);
+  w.document.close();
 }
 
 /* ---------- SALES ---------- */
