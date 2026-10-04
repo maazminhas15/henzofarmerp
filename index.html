@@ -1,9 +1,159 @@
-<!-- ==========================================================
-  HENZO FARM ERP — ADVANCED FILTERS PATCH
-  PASTE THIS WHOLE BLOCK in index.html RIGHT BEFORE </body>
-  (after the last </script>). Nothing else needs to change.
-  ========================================================== -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Henzo Farm ERP</title>
+<script>
+  const SUPABASE_URL      = "https://tgtwdimleecmcifjptrt.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_C_7eGsBM7EAO3C5m-nhQ2Q_UFuAGzJ-";
+  const APP_PIN           = "1234";
+</script>
+<link rel="preconnect" href="https://tgtwdimleecmcifjptrt.supabase.co" crossorigin>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
+  :root{
+    --bg:#f5f6fb; --card:#ffffff; --ink:#1a2233; --muted:#6b7488; --faint:#9aa2b5;
+    --line:#edeef4; --line-2:#e4e6ef;
+    --indigo:#4f46e5; --indigo-2:#6366f1; --indigo-soft:#eef0fe;
+    --emerald:#10b981; --emerald-soft:#e7f7f1;
+    --amber:#f59e0b; --amber-soft:#fef3e2;
+    --pink:#ec4899; --violet:#8b5cf6; --slate:#64748b; --cyan:#06b6d4;
+    --red:#ef4444; --red-soft:#fdecec;
+    --shadow:0 1px 2px rgba(20,30,55,.04), 0 4px 16px rgba(20,30,55,.05);
+    --shadow-lg:0 12px 40px rgba(20,30,55,.14);
+    --r:16px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,"Helvetica Neue",Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{margin:0;font-weight:800;letter-spacing:-.02em}
+  button{font-family:inherit;cursor:pointer;border:none}
+  input,select{font-family:inherit;font-size:14px}
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:14px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:30}
+  .brand{display:flex;align-items:center;gap:12px}
+  .logo{width:40px;height:40px;border-radius:12px;background:linear-gradient(135deg,var(--indigo),var(--indigo-2));display:grid;place-items:center;box-shadow:0 6px 16px rgba(79,70,229,.32)}
+  .logo svg{width:22px;height:22px}
+  .brand .t{font-size:17px;font-weight:800;display:flex;align-items:center;gap:8px}
+  .brand .s{font-size:12px;color:var(--muted);margin-top:-1px}
+  .badge{font-size:10px;font-weight:700;letter-spacing:.05em;padding:3px 8px;border-radius:6px;background:var(--indigo-soft);color:var(--indigo);text-transform:uppercase}
+  header .spacer{flex:1}
+  .livepill{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:700;color:var(--emerald);background:var(--emerald-soft);padding:6px 12px;border-radius:20px}
+  .livepill .dot{width:7px;height:7px;border-radius:50%;background:var(--emerald);box-shadow:0 0 0 3px rgba(16,185,129,.18)}
+  .hdate{font-size:12px;color:var(--faint);font-weight:600}
+  nav{background:var(--card);border-bottom:1px solid var(--line);padding:0 24px;display:flex;gap:4px;position:sticky;top:69px;z-index:25;overflow-x:auto}
+  nav button{background:transparent;color:var(--muted);padding:14px 16px;font-size:13.5px;font-weight:700;white-space:nowrap;border-bottom:2.5px solid transparent;display:flex;align-items:center;gap:7px;transition:.15s}
+  nav button svg{width:16px;height:16px;opacity:.8}
+  nav button:hover{color:var(--ink)}
+  nav button.active{color:var(--indigo);border-bottom-color:var(--indigo)}
+  main{max-width:1240px;margin:0 auto;padding:24px 24px 64px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:20px}
+  .kpi{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow);position:relative;transition:.18s}
+  .kpi:hover{transform:translateY(-2px);box-shadow:0 10px 30px rgba(20,30,55,.08)}
+  .kpi .top{display:flex;justify-content:space-between;align-items:flex-start}
+  .kpi .label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .kpi .ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;flex:none}
+  .kpi .ico svg{width:17px;height:17px}
+  .kpi .val{font-size:25px;font-weight:800;margin-top:12px;letter-spacing:-.03em}
+  .kpi .val .cur{font-size:14px;color:var(--faint);font-weight:700;margin-right:3px}
+  .kpi .foot{font-size:12px;color:var(--muted);margin-top:6px;font-weight:600;display:flex;align-items:center;gap:5px}
+  .i-indigo{background:var(--indigo-soft);color:var(--indigo)} .i-emerald{background:var(--emerald-soft);color:var(--emerald)}
+  .i-red{background:var(--red-soft);color:var(--red)} .i-amber{background:var(--amber-soft);color:var(--amber)}
+  .v-emerald{color:var(--emerald)} .v-red{color:var(--red)} .v-indigo{color:var(--indigo)}
+  .grid-2{display:grid;grid-template-columns:1.7fr 1fr;gap:16px;margin-bottom:20px}
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+  .panel .ph{padding:18px 20px 4px;display:flex;align-items:center;gap:10px}
+  .panel .ph .bar{width:4px;height:18px;border-radius:3px;background:var(--indigo)}
+  .panel .ph h3{font-size:15px}
+  .panel .ph .sp{flex:1}
+  .panel .pb{padding:12px 20px 20px}
+  .chart-wrap{position:relative;height:280px}
+  .donut-wrap{position:relative;height:210px;margin-top:6px}
+  .legend{display:flex;flex-direction:column;gap:9px;margin-top:14px}
+  .legend .row{display:flex;align-items:center;gap:9px;font-size:13px}
+  .legend .dot{width:10px;height:10px;border-radius:3px;flex:none}
+  .legend .nm{color:var(--ink);font-weight:600} .legend .sp{flex:1}
+  .legend .pc{color:var(--muted);font-weight:700;font-size:12px} .legend .amt{color:var(--ink);font-weight:700}
+  .flocks{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px}
+  .fcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:20px}
+  .fcard .fh{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+  .fcard .fh h3{font-size:16px}
+  .tag{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px;background:var(--indigo-soft);color:var(--indigo)}
+  .fstats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:14px 0;border-top:1px solid var(--line)}
+  .fstat{text-align:center} .fstat .l{font-size:10.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .fstat .n{font-size:20px;font-weight:800;margin-top:4px}
+  .prog{height:8px;background:var(--line-2);border-radius:6px;overflow:hidden;margin-top:12px}
+  .prog>i{display:block;height:100%;background:linear-gradient(90deg,var(--indigo),var(--indigo-2));border-radius:6px}
+  .prog-lbl{display:flex;justify-content:space-between;font-size:11.5px;color:var(--muted);font-weight:600;margin-top:8px}
+  .btn{background:var(--indigo);color:#fff;padding:10px 16px;border-radius:10px;font-weight:700;font-size:13.5px;display:inline-flex;align-items:center;gap:7px;box-shadow:0 4px 12px rgba(79,70,229,.24)}
+  .btn:hover{background:#4338ca}
+  .btn svg{width:15px;height:15px}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line-2);box-shadow:none}
+  .btn.ghost:hover{background:#fafafe}
+  .btn.sm{padding:7px 12px;font-size:12.5px}
+  .iconbtn{width:32px;height:32px;border-radius:8px;background:#f7f8fc;display:inline-grid;place-items:center;color:var(--muted)}
+  .iconbtn:hover{background:var(--indigo-soft);color:var(--indigo)}
+  .iconbtn.del:hover{background:var(--red-soft);color:var(--red)}
+  .iconbtn svg{width:15px;height:15px}
+  .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+  .search{flex:1;min-width:220px;position:relative}
+  .search svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint)}
+  .search input{width:100%;padding:11px 14px 11px 38px;border:1px solid var(--line-2);border-radius:11px;background:#fff}
+  .sel{padding:11px 14px;border:1px solid var(--line-2);border-radius:11px;background:#fff;color:var(--ink);font-weight:600}
+  input:focus,select:focus{outline:none;border-color:var(--indigo);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+  .tcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);overflow:hidden}
+  .twrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  thead th{text-align:left;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:700;padding:13px 16px;background:#fbfbfe;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody td{padding:13px 16px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#fafbff}
+  tfoot td{padding:13px 16px;border-top:2px solid var(--line-2);background:#fbfbfe}
+  td.num,th.num{text-align:right}
+  .cust{font-weight:700;color:var(--ink)}
+  .dt{color:var(--muted);font-weight:600}
+  .money{font-weight:700}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:7px}
+  .chip.eggs{background:var(--indigo-soft);color:var(--indigo)} .chip.meat{background:var(--red-soft);color:var(--red)}
+  .chip.cash{background:var(--amber-soft);color:var(--amber)} .chip.online{background:var(--emerald-soft);color:var(--emerald)}
+  .chip.feed{background:var(--indigo-soft);color:var(--indigo)} .chip.vaccine{background:#f1ecfe;color:var(--violet)}
+  .chip.chicks{background:#fdeaf3;color:var(--pink)} .chip.misc{background:#f1f3f8;color:var(--slate)}
+  .chip.visit{background:#e6f9fb;color:var(--cyan)} .chip.labour{background:var(--amber-soft);color:var(--amber)} .chip.shed{background:var(--emerald-soft);color:var(--emerald)}
+  .due{color:var(--red);font-weight:800} .clr{color:var(--emerald);font-weight:700}
+  .empty{text-align:center;color:var(--muted);padding:48px 16px}
+  .empty .big{font-size:34px;margin-bottom:8px}
+  .strip{display:grid;grid-template-columns:repeat(3,1fr);gap:0;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);margin-bottom:16px;overflow:hidden}
+  .strip .s{padding:16px 20px;border-right:1px solid var(--line)}
+  .strip .s:last-child{border-right:none}
+  .strip .l{font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .strip .v{font-size:20px;font-weight:800;margin-top:5px}
+  .overlay{position:fixed;inset:0;background:rgba(15,20,40,.5);backdrop-filter:blur(2px);display:none;place-items:center;z-index:60;padding:16px}
+  .overlay.show{display:grid}
+  .modal{background:var(--card);border-radius:18px;width:100%;max-width:480px;max-height:92vh;overflow:auto;box-shadow:var(--shadow-lg);animation:pop .18s ease}
+  @keyframes pop{from{transform:scale(.96);opacity:0}to{transform:scale(1);opacity:1}}
+  .modal .mh{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .modal .mh h3{font-size:17px} .modal .mh .bar{width:4px;height:20px;border-radius:3px;background:var(--indigo)}
+  .form{padding:20px 22px;display:grid;gap:14px}
+  .field label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em}
+  .field input,.field select{width:100%;padding:11px 13px;border:1px solid var(--line-2);border-radius:11px;background:#fff}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .hint{font-size:12px;color:var(--indigo);font-weight:600;background:var(--indigo-soft);padding:8px 11px;border-radius:9px}
+  .warn{font-size:12px;color:var(--red);font-weight:700;background:var(--red-soft);padding:8px 11px;border-radius:9px}
+  .macts{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-size:13.5px;font-weight:600;z-index:80;opacity:0;transition:.25s;pointer-events:none;box-shadow:var(--shadow-lg)}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  .toast.err{background:var(--red)} .toast.ok{background:var(--emerald)}
+  .banner{max-width:1240px;margin:14px auto 0;padding:12px 18px;border-radius:12px;background:var(--amber-soft);color:#92660a;font-weight:700;font-size:13px;display:flex;align-items:center;gap:10px;justify-content:space-between}
+  .banner button{background:var(--amber);color:#fff;padding:7px 12px;border-radius:8px;font-weight:700;font-size:12.5px}
+  .center{min-height:100vh;display:grid;place-items:center;padding:20px}
+  .authcard{background:var(--card);border:1px solid var(--line);border-radius:20px;box-shadow:var(--shadow-lg);max-width:420px;width:100%;padding:32px;text-align:center}
+  .authcard .logo{margin:0 auto 16px;width:52px;height:52px}
+  .authcard h2{font-size:22px;margin-bottom:6px} .authcard p{color:var(--muted);margin:0 0 22px}
+  .authcard ol{text-align:left;color:var(--muted);font-size:13.5px;line-height:1.8;padding-left:18px}
+  .pin-in{font-size:30px;letter-spacing:14px;text-align:center;padding:14px;width:100%;border:1.5px solid var(--line-2);border-radius:14px;font-weight:700}
+  .pin-in:focus{border-color:var(--indigo)}
+  /* ---- FILTERS ---- */
   .ms{position:relative}
   .ms>summary{list-style:none;cursor:pointer;padding:11px 14px;border:1px solid var(--line-2);border-radius:11px;background:#fff;font-weight:600;display:flex;align-items:center;gap:8px;user-select:none;white-space:nowrap}
   .ms>summary::-webkit-details-marker{display:none}
@@ -25,10 +175,647 @@
   .bar-bg{height:7px;background:var(--line-2);border-radius:6px;min-width:90px;overflow:hidden}
   .bar-bg i{display:block;height:100%;background:linear-gradient(90deg,var(--indigo),var(--indigo-2))}
   .toolbar.second{margin-top:-6px}
+  @media(max-width:760px){ .grid-2{grid-template-columns:1fr} .strip{grid-template-columns:1fr;} .strip .s{border-right:none;border-bottom:1px solid var(--line)} main{padding:16px} header{padding:12px 16px} nav{padding:0 10px} .hdate{display:none} }
 </style>
+</head>
+<body>
+
+<div id="setup" class="center" style="display:none">
+  <div class="authcard">
+    <div class="logo">🥚</div><h2>Add your keys</h2>
+    <p>Paste your Supabase URL + key at the top of index.html, then redeploy.</p>
+  </div>
+</div>
+
+<div id="pinscreen" class="center" style="display:none">
+  <div class="authcard">
+    <div class="logo" style="background:linear-gradient(135deg,var(--indigo),var(--indigo-2));display:grid;place-items:center">
+      <svg viewBox="0 0 24 24" fill="#fff" width="26"><path d="M12 2C9 2 6 6 6 12a6 6 0 0012 0c0-6-3-10-6-10z"/></svg></div>
+    <h2>Henzo Farm</h2><p>Enter your PIN</p>
+    <input id="pinInput" class="pin-in" type="password" inputmode="numeric" maxlength="8" placeholder="••••">
+    <button class="btn" style="width:100%;margin-top:16px;justify-content:center" onclick="checkPin()">Unlock</button>
+    <p id="pinErr" style="color:var(--red);display:none;margin:12px 0 0;font-weight:600">Wrong PIN</p>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <header>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2C9 2 6 6 6 12a6 6 0 0012 0c0-6-3-10-6-10z"/></svg></div>
+      <div><div class="t">Henzo Farm ERP <span class="badge">Live</span></div><div class="s">Commercial poultry management</div></div>
+    </div>
+    <div class="spacer"></div>
+    <div class="livepill" id="syncpill"><span class="dot"></span><span id="synctxt">Cloud synced</span></div>
+    <div class="hdate" id="hdate"></div>
+  </header>
+  <nav id="tabs">
+    <button data-tab="dashboard" class="active">Dashboard</button>
+    <button data-tab="orders">Orders</button>
+    <button data-tab="sales">Sales Ledger</button>
+    <button data-tab="expenses">Expenses Ledger</button>
+    <button data-tab="customers">Customers</button>
+    <button data-tab="flocks">Flocks</button>
+    <button data-tab="reports">Reports</button>
+  </nav>
+  <div id="backupBanner"></div>
+  <main id="view"></main>
+</div>
+
+<div id="overlay" class="overlay"><div id="modalHost"></div></div>
+<div id="toast" class="toast"></div>
 
 <script>
-/* ================= FILTER ENGINE ================= */
+/* ---------- Boot ---------- */
+let db=null;
+let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
+const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length>20;
+const el=id=>document.getElementById(id);
+const show=(id,d="block")=>el(id).style.display=d, hide=id=>el(id).style.display="none";
+
+if(!configured){ show("setup","grid"); }
+else{
+  db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+  if(sessionStorage.getItem("henzo_ok")==="1") setTimeout(startApp,0);
+  else { show("pinscreen","grid"); el("pinInput").focus(); }
+}
+el("pinInput")?.addEventListener("keydown",e=>{if(e.key==="Enter")checkPin();});
+function checkPin(){ if(el("pinInput").value===APP_PIN){sessionStorage.setItem("henzo_ok","1");hide("pinscreen");startApp();}
+  else{el("pinErr").style.display="block";el("pinInput").value="";} }
+function startApp(){ show("app"); el("hdate").textContent=new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"}); loadAll(); checkBackupReminder(); }
+
+/* ---------- Helpers ---------- */
+const R=n=>Math.round(Number(n)||0).toLocaleString("en-PK");
+const money=n=>`<span class="cur">PKR</span>${R(n)}`;
+const moneyT=n=>"PKR "+R(n);
+const numf=n=>(Number(n)||0).toLocaleString("en-PK");
+function fmtDate(d){if(!d)return"";return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"2-digit"});}
+function toast(m,type="ok"){const t=el("toast");t.textContent=m;t.className="toast show "+type;setTimeout(()=>t.className="toast",2200);}
+function openModal(h){el("modalHost").innerHTML=h;el("overlay").classList.add("show");}
+function closeModal(){el("overlay").classList.remove("show");el("modalHost").innerHTML="";}
+el("overlay").addEventListener("click",e=>{if(e.target.id==="overlay")closeModal();});
+const ICN={
+  cash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>',
+  wallet:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h18v12H3z"/><path d="M16 12h2"/></svg>',
+  down:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 7l10 10M17 7v10H7"/></svg>',
+  bag:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 7h12l1 13H5z"/><path d="M9 7a3 3 0 016 0"/></svg>',
+  chart:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0"/><path d="M16 6a3 3 0 010 6"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20h4L18 10l-4-4L4 16z"/></svg>',
+  del:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>',
+  search:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>',
+  download:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>'
+};
+
+/* ---------- Data ---------- */
+const CACHE_KEY="henzo_cache_v4";
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders}));}catch(e){}}
+function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
+function computeBalances(){
+  const m={};
+  S.sales.forEach(s=>{const n=s.customer_name||'—';const b=m[n]||(m[n]={id:n,name:n,transactions:0,billed:0,received:0,outstanding:0});
+    b.transactions++;b.billed+=+s.total_amount;b.received+=+s.amount_paid;b.outstanding+=(+s.total_amount-+s.amount_paid);});
+  return Object.values(m);
+}
+function setSync(state){
+  const t=el("synctxt"),p=el("syncpill"); if(!t)return;
+  if(state==='offline'){t.textContent="Offline · cached";p.style.color="var(--amber)";}
+  else if(state==='updating'){t.textContent="Updating…";p.style.color="";}
+  else{t.textContent="Cloud synced";p.style.color="";}
+}
+document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll("#tabs button").forEach(x=>x.classList.remove("active"));
+  b.classList.add("active"); currentTab=b.dataset.tab; render();
+});
+async function loadAll(){
+  const c=loadCache();
+  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
+  else { el("view").innerHTML=`<div class="empty"><div class="big">🐔</div>Loading farm data…</div>`; }
+  try{
+    const [fl,cu,sa,ex,or]=await Promise.all([
+      db.from("flocks").select("*").order("purchased"),
+      db.from("customers").select("*").order("name"),
+      db.from("sales").select("*").order("sale_date",{ascending:false}),
+      db.from("expenses").select("*").order("expense_date",{ascending:false}),
+      db.from("orders").select("*").order("delivery_date",{ascending:true})
+    ]);
+    for(const r of [fl,cu,sa,ex]) if(r.error) throw r.error;
+    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,balances:[]}; S.balances=computeBalances();
+    saveCache(); render(); setSync('synced');
+  }catch(e){
+    if(!(c&&c.sales)) el("view").innerHTML=`<div class="empty"><div class="big">⚠️</div><b>Couldn't load data</b><br>
+      <span style="font-size:13px">${e.message||e}</span></div>`;
+    setSync('offline');
+  }
+}
+let _chartP=null;
+function ensureChart(){ if(window.Chart) return Promise.resolve();
+  return _chartP||(_chartP=new Promise((res,rej)=>{const s=document.createElement('script');
+    s.src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);}));}
+function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(_){}});charts={};}
+function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
+function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();}
+
+/* ---------- BACKUP ---------- */
+const BACKUP_KEY="henzo_last_backup";
+function downloadFullBackup(silent){
+  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders};
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="henzo_full_backup_"+new Date().toISOString().slice(0,10)+".json";
+  a.click();
+  localStorage.setItem(BACKUP_KEY,new Date().toISOString());
+  if(!silent) toast("Backup downloaded");
+  checkBackupReminder();
+}
+function checkBackupReminder(){
+  const last=localStorage.getItem(BACKUP_KEY);
+  const days=last?Math.floor((Date.now()-new Date(last).getTime())/86400000):999;
+  const host=el("backupBanner"); if(!host) return;
+  if(days>=7){
+    host.innerHTML=`<div class="banner"><span>💾 ${last?`It's been ${days} days since your last backup.`:'You have never downloaded a backup.'} Download one now to keep your data safe.</span>
+      <button onclick="downloadFullBackup()">Download Backup</button></div>`;
+  } else host.innerHTML="";
+}
+
+/* ---------- DASHBOARD ---------- */
+function vDashboard(){
+  const rev=S.sales.reduce((a,s)=>a+ +s.total_amount,0);
+  const paid=S.sales.reduce((a,s)=>a+ +s.amount_paid,0);
+  const due=rev-paid;
+  const opCost=S.expenses.filter(e=>e.type==='operating').reduce((a,e)=>a+ +e.amount,0);
+  const capex=S.expenses.filter(e=>e.type==='capex').reduce((a,e)=>a+ +e.amount,0);
+  const bird=S.expenses.filter(e=>e.type==='biological').reduce((a,e)=>a+ +e.amount,0);
+  const totalSpent=S.expenses.reduce((a,e)=>a+ +e.amount,0);
+  const opProfit=rev-opCost;
+  const collRate=rev?((paid/rev)*100).toFixed(1):0;
+  const birds=S.flocks.reduce((a,f)=>a+ +f.live_birds,0);
+  el("view").innerHTML=`
+    <div class="kpis">
+      <div class="kpi"><div class="top"><span class="label">Total Revenue</span><span class="ico i-indigo">${ICN.chart}</span></div>
+        <div class="val">${money(rev)}</div><div class="foot v-indigo">Egg &amp; meat sales</div></div>
+      <div class="kpi"><div class="top"><span class="label">Cash Collected</span><span class="ico i-emerald">${ICN.cash}</span></div>
+        <div class="val v-emerald">${money(paid)}</div><div class="foot">${collRate}% collection rate</div></div>
+      <div class="kpi"><div class="top"><span class="label">Outstanding (Khata)</span><span class="ico i-red">${ICN.wallet}</span></div>
+        <div class="val v-red">${money(due)}</div><div class="foot" style="color:var(--red);cursor:pointer" onclick="tab('customers')">Collect receivables →</div></div>
+      <div class="kpi"><div class="top"><span class="label">Operating Cost</span><span class="ico i-amber">${ICN.down}</span></div>
+        <div class="val">${money(opCost)}</div><div class="foot">Feed, vaccine, day-to-day</div></div>
+      <div class="kpi"><div class="top"><span class="label">Operating Profit / Loss</span><span class="ico ${opProfit>=0?'i-emerald':'i-red'}">${ICN.bag}</span></div>
+        <div class="val ${opProfit>=0?'v-emerald':'v-red'}">${money(opProfit)}</div><div class="foot">Revenue − operating cost</div></div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><div class="top"><span class="label">Total Farm Spent</span><span class="ico i-amber">${ICN.down}</span></div>
+        <div class="val">${money(totalSpent)}</div><div class="foot">All costs incl. setup</div></div>
+      <div class="kpi"><div class="top"><span class="label">Capital Invested</span><span class="ico i-indigo">${ICN.bag}</span></div>
+        <div class="val v-indigo">${money(capex)}</div><div class="foot">Shed, blocks, labour</div></div>
+      <div class="kpi"><div class="top"><span class="label">Bird Investment</span><span class="ico i-emerald">${ICN.chart}</span></div>
+        <div class="val">${money(bird)}</div><div class="foot">Chicks purchased</div></div>
+      <div class="kpi"><div class="top"><span class="label">Live Birds</span><span class="ico i-indigo">${ICN.users}</span></div>
+        <div class="val">${numf(birds)}</div><div class="foot">Across ${S.flocks.length} flocks</div></div>
+    </div>
+    <div class="grid-2">
+      <div class="panel"><div class="ph"><span class="bar"></span><h3>Monthly Cash Flow</h3></div>
+        <div class="pb"><div class="chart-wrap"><canvas id="cashChart"></canvas></div></div></div>
+      <div class="panel"><div class="ph"><span class="bar" style="background:var(--emerald)"></span><h3>Expense Allocation</h3></div>
+        <div class="pb"><div class="donut-wrap"><canvas id="donutChart"></canvas></div><div id="donutLegend" class="legend"></div></div></div>
+    </div>
+    <div class="panel" style="margin-bottom:20px"><div class="ph"><span class="bar"></span><h3>Poultry Flocks &amp; Capacity</h3><span class="sp"></span>
+      <button class="btn ghost sm" onclick="tab('flocks')">Manage →</button></div>
+      <div class="pb"><div class="flocks">${S.flocks.map(flockCardHTML).join("")||'<div class="empty">No flocks</div>'}</div></div></div>
+    <div class="panel"><div class="ph"><span class="bar"></span><h3>Recent Sales</h3><span class="sp"></span>
+      <button class="btn ghost sm" onclick="tab('sales')">View all →</button></div>
+      <div class="twrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Items</th><th class="num">Total</th><th class="num">Balance</th></tr></thead>
+      <tbody>${S.sales.slice(0,6).map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td class="cust">${s.customer_name||"—"}</td>
+        <td>${itemLabel(s)}</td><td class="num money">${moneyT(s.total_amount)}</td>
+        <td class="num">${+s.balance>0?`<span class="due">${moneyT(s.balance)}</span>`:`<span class="clr">Paid</span>`}</td></tr>`).join("")
+        ||'<tr><td colspan=5 class="empty">No sales yet</td></tr>'}</tbody></table></div></div>`;
+  drawCashChart().catch(()=>{}); drawDonut(totalSpent).catch(()=>{});
+}
+function flockCardHTML(f){
+  const start=+f.start_count||0, mort=+f.mortality||0, sold=+f.sold||0;
+  const live=+f.live_birds, surv=start?((live/start)*100).toFixed(1):0;
+  return `<div class="fcard"><div class="fh"><h3>${f.name}</h3><span class="tag">${f.breed||"—"}</span>
+    <span style="flex:1"></span><span class="dt" style="font-size:12px">${fmtDate(f.purchased)}</span></div>
+    <div class="fstats" style="grid-template-columns:repeat(4,1fr)">
+      <div class="fstat"><div class="l">Start</div><div class="n">${numf(start)}</div></div>
+      <div class="fstat"><div class="l">Died</div><div class="n v-red">${numf(mort)}</div></div>
+      <div class="fstat"><div class="l">Sold</div><div class="n">${numf(sold)}</div></div>
+      <div class="fstat"><div class="l">Live</div><div class="n v-emerald">${numf(live)}</div></div></div>
+    <div class="prog"><i style="width:${surv}%"></i></div>
+    <div class="prog-lbl"><span>Survival ${surv}%</span><span>${numf(mort)} died · ${numf(sold)} sold</span></div></div>`;
+}
+async function drawCashChart(){
+  await ensureChart(); if(currentTab!=='dashboard'||!el("cashChart")) return;
+  const byM={}; const k=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0");};
+  S.sales.forEach(s=>{(byM[k(s.sale_date)]=byM[k(s.sale_date)]||{r:0,e:0}).r+= +s.total_amount;});
+  S.expenses.forEach(e=>{(byM[k(e.expense_date)]=byM[k(e.expense_date)]||{r:0,e:0}).e+= +e.amount;});
+  const ms=Object.keys(byM).sort();
+  const labels=ms.map(m=>new Date(m+"-01").toLocaleDateString("en",{month:"short",year:"2-digit"}));
+  const ctx=el("cashChart").getContext("2d");
+  const g1=ctx.createLinearGradient(0,0,0,280); g1.addColorStop(0,"rgba(16,185,129,.28)"); g1.addColorStop(1,"rgba(16,185,129,0)");
+  const g2=ctx.createLinearGradient(0,0,0,280); g2.addColorStop(0,"rgba(239,68,68,.22)"); g2.addColorStop(1,"rgba(239,68,68,0)");
+  charts.cash=new Chart(ctx,{type:"line",data:{labels,datasets:[
+    {label:"Sales",data:ms.map(m=>byM[m].r),borderColor:"#10b981",backgroundColor:g1,fill:true,tension:.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5},
+    {label:"Expenses",data:ms.map(m=>byM[m].e),borderColor:"#ef4444",backgroundColor:g2,fill:true,tension:.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5}]},
+    options:{responsive:true,maintainAspectRatio:false,interaction:{mode:"index",intersect:false},
+      plugins:{legend:{position:"bottom",labels:{usePointStyle:true,pointStyle:"circle",padding:18,font:{weight:"600",size:12}}},
+        tooltip:{callbacks:{label:c=>` ${c.dataset.label}: PKR ${R(c.parsed.y)}`},padding:11,cornerRadius:9}},
+      scales:{x:{grid:{display:false},ticks:{font:{size:11},color:"#9aa2b5"}},
+        y:{border:{display:false},grid:{color:"#f0f1f6"},ticks:{callback:v=>v>=1000?(v/1000)+"k":v,font:{size:11},color:"#9aa2b5"}}}}});
+}
+async function drawDonut(total){
+  await ensureChart(); if(currentTab!=='dashboard'||!el("donutChart")) return;
+  const byCat={}; S.expenses.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+ +e.amount);
+  const entries=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
+  const palette={Feed:"#6366f1",Shed:"#10b981",Misc:"#f59e0b",Chicks:"#ec4899",Vaccine:"#8b5cf6",Visit:"#06b6d4",Labour:"#f97316"};
+  const colors=entries.map(([k],i)=>palette[k]||["#6366f1","#10b981","#f59e0b","#ec4899","#8b5cf6","#06b6d4"][i%6]);
+  charts.donut=new Chart(el("donutChart").getContext("2d"),{type:"doughnut",
+    data:{labels:entries.map(e=>e[0]),datasets:[{data:entries.map(e=>e[1]),backgroundColor:colors,borderWidth:0,cutout:"70%"}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:c=>` ${c.label}: PKR ${R(c.parsed)}`},padding:11,cornerRadius:9}}}});
+  el("donutLegend").innerHTML=entries.map(([k,v],i)=>{
+    const pc=total?((v/total)*100).toFixed(0):0;
+    return `<div class="row"><span class="dot" style="background:${colors[i]}"></span><span class="nm">${k}</span>
+      <span class="sp"></span><span class="amt">${moneyT(v)}</span><span class="pc">${pc}%</span></div>`;}).join("");
+}
+
+/* ---------- ORDERS: actions & forms ---------- */
+function orderItemLabel(o){
+  const p=[];
+  if(+o.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(o.eggs_dozens)} dz</span>`);
+  if(+o.meat_kg>0) p.push(`<span class="chip meat">🍗 ${numf(o.meat_kg)}kg</span>`);
+  if(+o.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(o.chicks)} chicks</span>`);
+  return p.join(" ")||'<span class="chip misc">—</span>';
+}
+async function cancelOrder(o){
+  if(!confirm(`Cancel order ${o.order_number||''} for ${o.customer_name}? This will NOT delete it — it just marks it Cancelled and removes it from your delivery list.`)) return;
+  try{
+    const {data:fresh,error:e0}=await db.from("orders").select("status").eq("id",o.id).single(); if(e0)throw e0;
+    if(fresh.status==='Delivered'){toast("This order was already delivered — can't cancel it.",'err');await loadAll();return;}
+    const {error}=await db.from("orders").update({status:'Cancelled'}).eq("id",o.id); if(error)throw error;
+    toast("Order cancelled"); await loadAll();
+  }catch(e){toast(e.message,'err');}
+}
+let o_touched=false;
+function nextOrderNumber(){
+  const nums=S.orders.map(o=>+((o.order_number||'').match(/\d+/)||[0])[0]).filter(n=>n>0);
+  const next=(nums.length?Math.max(...nums):1024)+1;
+  return "HF-"+next;
+}
+function orderForm(x){const o=x||{};
+  const d=new Date(); d.setDate(d.getDate()+2);
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit order':'New order'}</h3></div>
+    <div class="form">
+      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" value="${(o.customer_name||'').replace(/"/g,'&quot;')}">
+        <datalist id="ocl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
+      <div class="row2"><div class="field"><label>Phone</label><input id="o_phone" value="${(o.phone||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Delivery date</label><input id="o_date" type="date" value="${o.delivery_date||d.toISOString().slice(0,10)}"></div></div>
+      <div class="field"><label>Address</label><input id="o_addr" value="${(o.address||'').replace(/"/g,'&quot;')}" placeholder="House, street, area"></div>
+      <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="o_dz" type="number" step="0.5" value="${o.eggs_dozens||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / dozen</label><input id="o_ppd" type="number" value="${o.price_per_dozen||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="o_mkg" type="number" step="0.1" value="${o.meat_kg||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / kg</label><input id="o_mppk" type="number" value="${o.price_per_kg||1000}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Chicks (count)</label><input id="o_chicks" type="number" value="${o.chicks||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Price / chick</label><input id="o_cp" type="number" value="${o.chick_price||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Delivery charge</label><input id="o_dc" type="number" value="${o.delivery_charge||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Discount</label><input id="o_disc" type="number" value="${o.discount||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="field"><label>Order Total (PKR)</label><input id="o_total" type="number" value="${o.total_amount||0}" oninput="o_touched=true"></div>
+      <div class="hint" id="o_hint"></div>
+      <div class="field"><label>Notes (optional)</label><input id="o_notes" value="${(o.notes||'').replace(/"/g,'&quot;')}"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveOrder('${x?x.id:''}')">${x?'Update order':'Save order'}</button></div></div>`);
+  o_touched=!!x; calcOrderTotal();
+}
+function calcOrderTotal(){
+  const dz=+el("o_dz").value||0, ppd=+el("o_ppd").value||0, eggSub=dz*ppd;
+  const mkg=+el("o_mkg").value||0, mppk=+el("o_mppk").value||0, meatSub=mkg*mppk;
+  const ch=+el("o_chicks").value||0, cp=+el("o_cp").value||0, chickSub=ch*cp;
+  const dc=+el("o_dc").value||0, disc=+el("o_disc").value||0;
+  const t=Math.max(0,eggSub+meatSub+chickSub+dc-disc);
+  const parts=[];
+  if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
+  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
+  if(chickSub) parts.push(`Chicks ${moneyT(chickSub)}`);
+  if(dc) parts.push(`Delivery ${moneyT(dc)}`);
+  if(disc) parts.push(`− Discount ${moneyT(disc)}`);
+  el("o_hint").textContent = parts.length? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill in items to auto-fill total";
+  if(!o_touched && t>0) el("o_total").value=t;
+}
+async function saveOrder(id){
+  const name=el("o_name").value.trim();
+  if(!name){toast("Enter a customer name",'err');return;}
+  const rec={
+    order_number: id ? undefined : nextOrderNumber(),
+    customer_name:name, phone:el("o_phone").value.trim()||null, address:el("o_addr").value.trim()||null,
+    delivery_date:el("o_date").value||null,
+    eggs_dozens:+el("o_dz").value||0, price_per_dozen:+el("o_ppd").value||0,
+    meat_kg:+el("o_mkg").value||0, price_per_kg:+el("o_mppk").value||0,
+    chicks:+el("o_chicks").value||0, chick_price:+el("o_cp").value||0,
+    delivery_charge:+el("o_dc").value||0, discount:+el("o_disc").value||0,
+    total_amount:+el("o_total").value||0, notes:el("o_notes").value.trim()||null
+  };
+  try{
+    const {error}= id? await db.from("orders").update(rec).eq("id",id) : await db.from("orders").insert({...rec,status:'Pending'});
+    if(error)throw error; toast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error — did you run add_orders_table.sql in Supabase yet?",'err');}
+}
+function deliverOrder(o){
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Complete Order ${o.order_number||''}</h3></div>
+    <div class="form">
+      <div class="strip" style="margin:0"><div class="s"><div class="l">Customer</div><div class="v" style="font-size:15px">${o.customer_name}</div></div>
+        <div class="s"><div class="l">Order Total</div><div class="v">${moneyT(o.total_amount)}</div></div></div>
+      <div class="field"><label>Amount Collected (PKR)</label><input id="d_paid" type="number" value="${o.total_amount}" oninput="calcDeliverBalance(${o.total_amount})"></div>
+      <div class="field"><label>Payment method</label><select id="d_method"><option>Cash</option><option>Online</option><option>Other</option></select></div>
+      <div class="hint" id="d_hint"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick='confirmDeliver(${JSON.stringify(o)})'>Confirm &amp; Complete Order</button></div></div>`);
+  calcDeliverBalance(o.total_amount);
+}
+function calcDeliverBalance(total){
+  const paid=+el("d_paid").value||0, bal=total-paid;
+  el("d_hint").textContent = bal>0 ? `Balance remaining: ${moneyT(bal)} (Partially Paid)` : bal<0 ? `Overpaid by ${moneyT(-bal)} — please check the amount` : `Paid in full ✓`;
+}
+async function confirmDeliver(o){
+  const paid=+el("d_paid").value||0, method=el("d_method").value;
+  try{
+    const {data:fresh,error:e0}=await db.from("orders").select("status").eq("id",o.id).single();
+    if(e0)throw e0;
+    if(fresh.status==='Delivered'){toast("This order has already been completed.",'err');closeModal();await loadAll();return;}
+    let cid=null;
+    if(o.customer_name){let c=S.customers.find(x=>x.name.toLowerCase()===o.customer_name.toLowerCase());
+      if(!c){const{data,error}=await db.from("customers").insert({name:o.customer_name,phone:o.phone||null}).select().single();if(error)throw error;c=data;}
+      cid=c.id;}
+    const notes=buildNotesWithMeat(`Order ${o.order_number||''}`.trim(), +o.meat_kg||0, +o.price_per_kg||0);
+    const saleRec={sale_date:new Date().toISOString().slice(0,10),customer_id:cid,customer_name:o.customer_name,
+      eggs_dozens:o.eggs_dozens||0,price_per_dozen:o.price_per_dozen||0,meat_birds:o.meat_birds||0,chicks:o.chicks||0,
+      total_amount:o.total_amount,amount_paid:paid,payment_method:method,notes};
+    const{error:e1}=await db.from("sales").insert(saleRec); if(e1)throw e1;
+    const{error:e2}=await db.from("orders").update({status:'Delivered',delivered_at:new Date().toISOString()}).eq("id",o.id); if(e2)throw e2;
+    toast("Order delivered — added to Sales Ledger"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error",'err');}
+}
+function printInvoice(o){
+  const eggSub=(+o.eggs_dozens||0)*(+o.price_per_dozen||0);
+  const meatSub=(+o.meat_kg||0)*(+o.price_per_kg||0);
+  const chickSub=(+o.chicks||0)*(+o.chick_price||0);
+  const rows=[];
+  if(+o.eggs_dozens>0) rows.push(`<tr><td>Eggs</td><td>${numf(o.eggs_dozens)} dozen</td><td>${moneyT(o.price_per_dozen)}</td><td>${moneyT(eggSub)}</td></tr>`);
+  if(+o.meat_kg>0) rows.push(`<tr><td>Meat</td><td>${numf(o.meat_kg)} kg</td><td>${moneyT(o.price_per_kg)}</td><td>${moneyT(meatSub)}</td></tr>`);
+  if(+o.chicks>0) rows.push(`<tr><td>Chicks</td><td>${numf(o.chicks)}</td><td>${moneyT(o.chick_price)}</td><td>${moneyT(chickSub)}</td></tr>`);
+  const w=window.open('','_blank');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${o.order_number||'Invoice'} - Henzo Farm</title>
+  <style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2233;max-width:640px;margin:24px auto;padding:0 16px}
+    h1{color:#10b981;font-size:26px;margin:0}
+    .sub{color:#6b7488;font-size:13px;margin-top:2px}
+    .box{border:1px solid #e4e6ef;border-radius:10px;padding:16px;margin-top:18px}
+    table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13.5px}
+    th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #edeef4}
+    th{color:#6b7488;text-transform:uppercase;font-size:11px}
+    .r{text-align:right}
+    .tot{font-size:18px;font-weight:800;margin-top:10px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
+    @media print{button{display:none}}
+  </style></head><body>
+    <h1>🥚 HENZO FARM</h1><div class="sub">Pasture Raised · Islamabad</div>
+    <div class="box">
+      <div class="grid">
+        <div><b>Order #</b><br>${o.order_number||'—'}</div>
+        <div><b>Delivery Date</b><br>${fmtDate(o.delivery_date)}</div>
+        <div><b>Customer</b><br>${o.customer_name}</div>
+        <div><b>Phone</b><br>${o.phone||'—'}</div>
+      </div>
+      ${o.address?`<div style="margin-top:8px"><b>Address</b><br>${o.address}</div>`:''}
+    </div>
+    <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th class="r">Total</th></tr></thead>
+    <tbody>${rows.join("")||'<tr><td colspan=4>No items</td></tr>'}</tbody></table>
+    <div style="text-align:right;margin-top:10px">
+      ${+o.delivery_charge>0?`<div>Delivery: ${moneyT(o.delivery_charge)}</div>`:''}
+      ${+o.discount>0?`<div>Discount: −${moneyT(o.discount)}</div>`:''}
+      <div class="tot">Grand Total: ${moneyT(o.total_amount)}</div>
+      ${o.status==='Delivered'?`<div style="color:#10b981;font-weight:700;margin-top:4px">✓ Delivered</div>`:`<div style="color:#f59e0b;font-weight:700;margin-top:4px">Status: ${o.status}</div>`}
+    </div>
+    <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Print / Save as PDF</button>
+  </body></html>`);
+  w.document.close();
+}
+
+/* ---------- SALES: form ---------- */
+let s_touched=false;
+function parseMeatNote(notes){
+  const m=(notes||'').match(/Meat:\s*([\d.]+)kg @ Rs([\d.]+)\/kg/);
+  return m?{kg:+m[1],ppk:+m[2]}:{kg:0,ppk:0};
+}
+function buildNotesWithMeat(existingNotes,kg,ppk){
+  const cleaned=(existingNotes||'').replace(/Meat:\s*[\d.]+kg @ Rs[\d.]+\/kg = Rs[\d.]+;?\s*/,'').trim();
+  if(!(kg>0)) return cleaned||null;
+  const tag=`Meat: ${kg}kg @ Rs${ppk}/kg = Rs${Math.round(kg*ppk)}`;
+  return cleaned? `${cleaned}; ${tag}` : tag;
+}
+function saleForm(s,prefillName){const e=s||{};
+  const meatInfo=parseMeatNote(e.notes);
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${s?'Edit sale':'New sale'}</h3></div>
+    <div class="form">
+      <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
+      <div class="field"><label>Customer</label><input id="s_cust" list="cl" value="${(e.customer_name||prefillName||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
+        <datalist id="cl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
+      <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Roasters / Meat (birds count)</label><input id="s_meat" type="number" value="${e.meat_birds||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div></div>
+      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="s_mkg" type="number" step="0.1" value="${meatInfo.kg||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Price / kg (meat)</label><input id="s_mppk" type="number" value="${meatInfo.ppk||1000}" oninput="calcTotal()"></div></div>
+      <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true;checkOverpay()"></div>
+        <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}" oninput="checkOverpay()"></div></div>
+      <div class="hint" id="s_hint">Fill eggs and/or meat weight to auto-fill total</div>
+      <div id="s_warn"></div>
+      <div class="field"><label>Payment method</label><select id="s_method">
+        <option ${e.payment_method==='Cash'?'selected':''}>Cash</option><option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button></div></div>`);
+  s_touched=!!s; calcTotal(); checkOverpay();
+}
+function calcTotal(){
+  const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,eggSub=dz*ppd;
+  const mkg=+el("s_mkg").value||0,mppk=+el("s_mppk").value||0,meatSub=mkg*mppk;
+  const t=eggSub+meatSub;
+  const parts=[];
+  if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
+  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
+  el("s_hint").textContent = parts.length ? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill eggs and/or meat weight to auto-fill total";
+  if(!s_touched && t>0) el("s_total").value=t;
+}
+function checkOverpay(){
+  const total=+el("s_total").value||0, paidRaw=el("s_paid").value, paid=paidRaw===""?total:(+paidRaw||0);
+  const w=el("s_warn"); if(!w) return;
+  if(paid>total){
+    w.innerHTML=`<div class="warn">⚠️ Paid (${moneyT(paid)}) is more than Total (${moneyT(total)}). This usually means a payment for a DIFFERENT sale got typed here by mistake. If this customer is paying for something else too (e.g. eggs + meat), cancel and create a SEPARATE sale for that instead.</div>`;
+  } else w.innerHTML="";
+}
+async function saveSale(id){
+  const name=el("s_cust").value.trim(), total=+el("s_total").value||0;
+  let pv=el("s_paid").value; pv=pv===""?total:(+pv||0);
+  if(pv>total){
+    const ok=confirm("Paid is more than Total for this single sale.\n\nThis is usually a mistake — a second payment for a different item got typed into this sale.\n\nDo you still want to save it this way?");
+    if(!ok) return;
+  }
+  const mkg=+el("s_mkg").value||0, mppk=+el("s_mppk").value||0;
+  const rec={sale_date:el("s_date").value,customer_name:name||null,eggs_dozens:+el("s_dz").value||0,
+    price_per_dozen:+el("s_ppd").value||0,meat_birds:+el("s_meat").value||0,chicks:+el("s_chicks").value||0,
+    total_amount:total,amount_paid:pv,payment_method:el("s_method").value,
+    notes:buildNotesWithMeat(id?(S.sales.find(x=>x.id===id)||{}).notes:'',mkg,mppk)};
+  try{
+    let cid=null;
+    if(name){let c=S.customers.find(x=>x.name.toLowerCase()===name.toLowerCase());
+      if(!c){const{data,error}=await db.from("customers").insert({name}).select().single();if(error)throw error;c=data;S.customers.push(c);}
+      cid=c.id;}
+    rec.customer_id=cid;
+    const {error}= id? await db.from("sales").update(rec).eq("id",id) : await db.from("sales").insert(rec);
+    if(error)throw error; toast(id?"Sale updated":"Sale saved"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error",'err');}
+}
+
+/* ---------- EXPENSES: form & feed history ---------- */
+function feedHistoryHTML(){
+  const feeds=S.expenses.filter(e=>e.category==='Feed').sort((a,b)=>new Date(a.expense_date)-new Date(b.expense_date));
+  if(!feeds.length) return "";
+  const today=new Date(); today.setHours(0,0,0,0);
+  const rows=feeds.map((f,i)=>{
+    const next = i<feeds.length-1 ? new Date(feeds[i+1].expense_date) : today;
+    const days=Math.max(0,Math.round((next-new Date(f.expense_date))/86400000));
+    return {...f,days,ongoing:i===feeds.length-1};
+  });
+  const last5=rows.slice(-5).reverse();
+  const closed=rows.filter(r=>!r.ongoing && r.days>0);
+  const avgDays=closed.length?Math.round(closed.reduce((a,r)=>a+r.days,0)/closed.length):0;
+  const avgCostDay=closed.length?Math.round(closed.reduce((a,r)=>a+ +r.amount,0)/closed.reduce((a,r)=>a+r.days,0)):0;
+  const lastFeed=feeds[feeds.length-1];
+  const daysSinceLast=Math.max(0,Math.round((today-new Date(lastFeed.expense_date))/86400000));
+  const overdue = avgDays>0 && daysSinceLast>avgDays;
+  const body=last5.map(f=>{
+    const bought = +f.qty>0 ? `${numf(f.qty)} ${f.unit||'kg'}` : (f.description||'Feed');
+    return `<tr><td class="dt">${fmtDate(f.expense_date)}</td><td>${bought}</td>
+      <td class="num money">${moneyT(f.amount)}</td>
+      <td class="num">${f.ongoing?`<span class="clr">${f.days} days so far</span>`:`<b>${f.days} days</b>`}</td></tr>`;
+  }).join("");
+  return `<div class="panel" style="margin-bottom:16px"><div class="ph"><span class="bar" style="background:var(--emerald)"></span>
+      <h3>Feed History — how long each purchase lasts</h3><span class="sp"></span>
+      <span class="chip feed">Avg ~${avgDays} days · ${moneyT(avgCostDay)}/day</span></div>
+    <div class="pb" style="padding-top:0">
+      <div class="${overdue?'warn':'hint'}" style="margin-bottom:12px">
+        ${overdue?`⚠️ It's been ${daysSinceLast} days since the last feed purchase (${fmtDate(lastFeed.expense_date)}) — that's longer than your usual ~${avgDays} days. You may be close to running out, or a recent purchase wasn't logged.`
+        :`Last feed bought ${daysSinceLast} day${daysSinceLast===1?'':'s'} ago (${fmtDate(lastFeed.expense_date)}). Usually lasts ~${avgDays} days.`}
+      </div>
+    </div>
+    <div class="twrap"><table><thead><tr><th>Date</th><th>Bought</th><th class="num">Cost</th><th class="num">Lasted</th></tr></thead>
+    <tbody>${body}</tbody></table></div></div>`;
+}
+function expForm(x){const e=x||{};
+  const cats=["Feed","Vaccine","Chicks","Misc","Visit","Labour","Shed"];
+  const units=["bag","kg","piece","dose","litre","bird",""];
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit expense':'New expense'}</h3></div>
+    <div class="form">
+      <div class="field"><label>Date</label><input id="e_date" type="date" value="${e.expense_date||new Date().toISOString().slice(0,10)}"></div>
+      <div class="row2"><div class="field"><label>Category</label><select id="e_cat">${cats.map(c=>`<option ${e.category===c?'selected':''}>${c}</option>`).join("")}</select></div>
+        <div class="field"><label>Flock</label><select id="e_scope">${["Old","New","General"].map(c=>`<option ${e.flock_scope===c?'selected':''}>${c}</option>`).join("")}</select></div></div>
+      <div class="field"><label>Type</label><select id="e_type">
+        <option value="operating" ${(e.type||'operating')==='operating'?'selected':''}>Operating (day-to-day)</option>
+        <option value="capex" ${e.type==='capex'?'selected':''}>Capital (shed, blocks, labour)</option>
+        <option value="biological" ${e.type==='biological'?'selected':''}>Bird investment (chicks)</option></select></div>
+      <div class="field"><label>Description</label><input id="e_desc" value="${(e.description||'').replace(/"/g,'&quot;')}" placeholder="e.g. Feed 50kg bag"></div>
+      <div class="row2"><div class="field"><label>Quantity</label><input id="e_qty" type="number" step="0.5" value="${e.qty||0}" oninput="calcExpAmount()"></div>
+        <div class="field"><label>Unit</label><select id="e_unit">${units.map(u=>`<option ${(e.unit||'bag')===u?'selected':''}>${u||'—'}</option>`).join("")}</select></div></div>
+      <div class="row2"><div class="field"><label>Price per unit (PKR)</label><input id="e_uprice" type="number" value="${e.unit_price||0}" oninput="calcExpAmount()"></div>
+        <div class="field"><label>Total amount (PKR)</label><input id="e_amt" type="number" value="${e.amount||0}" oninput="eAmt_touched=true"></div></div>
+      <div class="hint" id="e_hint">Enter qty × price to auto-fill total</div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveExp('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+  eAmt_touched=!!x; calcExpAmount();
+}
+let eAmt_touched=false;
+function calcExpAmount(){const q=+el("e_qty").value||0,up=+el("e_uprice").value||0,t=q*up;
+  el("e_hint").textContent = t? `${numf(q)} × ${moneyT(up)} = ${moneyT(t)}` : "Enter qty × price to auto-fill total";
+  if(!eAmt_touched && t>0) el("e_amt").value=t;}
+async function saveExp(id){
+  const scope=el("e_scope").value, flock=S.flocks.find(f=>(scope==="Old"&&f.code==="OLD")||(scope==="New"&&f.code==="NEW"));
+  const rec={expense_date:el("e_date").value,category:el("e_cat").value,type:el("e_type").value,flock_scope:scope,flock_id:flock?flock.id:null,
+    description:el("e_desc").value.trim(),qty:+el("e_qty").value||0,unit:(el("e_unit").value==='—'?'':el("e_unit").value),
+    unit_price:+el("e_uprice").value||0,amount:+el("e_amt").value||0};
+  try{const {error}= id? await db.from("expenses").update(rec).eq("id",id):await db.from("expenses").insert(rec);
+    if(error)throw error; toast(id?"Expense updated":"Expense saved"); closeModal(); await loadAll();
+  }catch(e){toast(e.message,'err');}
+}
+
+/* ---------- CUSTOMERS: forms ---------- */
+function custHistory(name){
+  const rows=S.sales.filter(s=>(s.customer_name||'')===name).sort((a,b)=>new Date(b.sale_date)-new Date(a.sale_date));
+  const billed=rows.reduce((a,s)=>a+ +s.total_amount,0), received=rows.reduce((a,s)=>a+ +s.amount_paid,0);
+  openModal(`<div class="modal" style="max-width:640px"><div class="mh"><span class="bar"></span><h3>${name} — full history</h3></div>
+    <div class="pb" style="padding:16px 22px">
+      <div class="strip" style="margin-bottom:14px"><div class="s"><div class="l">Billed</div><div class="v">${moneyT(billed)}</div></div>
+        <div class="s"><div class="l">Received</div><div class="v v-emerald">${moneyT(received)}</div></div>
+        <div class="s"><div class="l">Balance</div><div class="v ${billed-received>0?'v-red':'v-emerald'}">${moneyT(billed-received)}</div></div></div>
+      <div class="twrap"><table><thead><tr><th>Date</th><th>Items</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+      <tbody>${rows.map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td>${itemLabel(s)}</td>
+        <td class="num money">${moneyT(s.total_amount)}</td><td class="num clr">${moneyT(s.amount_paid)}</td>
+        <td class="num">${(+s.total_amount-+s.amount_paid)>0?`<span class="due">${moneyT(s.total_amount-s.amount_paid)}</span>`:`<span class="clr">✓</span>`}</td></tr>`).join("")
+        ||'<tr><td colspan=5 class="empty">No sales</td></tr>'}</tbody></table></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Close</button>
+      <button class="btn" onclick="closeModal();saleForm(null,'${name.replace(/'/g,"\\'")}')">${ICN.plus} New sale for ${name}</button></div></div>`);
+}
+function custForm(){openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Add customer</h3></div>
+  <div class="form"><div class="field"><label>Name</label><input id="c_name" placeholder="e.g. Jabeen Aunty"></div>
+    <div class="field"><label>Phone (optional)</label><input id="c_phone" placeholder="03xx-xxxxxxx"></div></div>
+  <div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveCust()">Save</button></div></div>`);}
+async function saveCust(){const name=el("c_name").value.trim();if(!name){toast("Enter a name",'err');return;}
+  try{const{error}=await db.from("customers").insert({name,phone:el("c_phone").value.trim()||null});if(error)throw error;
+    toast("Customer added");closeModal();await loadAll();}catch(e){toast(e.message,'err');}}
+
+/* ---------- FLOCKS: form ---------- */
+function flockForm(x){const f=x||{};
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit flock':'Add flock'}</h3></div>
+    <div class="form"><div class="field"><label>Name</label><input id="f_name" value="${(f.name||'').replace(/"/g,'&quot;')}"></div>
+      <div class="row2"><div class="field"><label>Breed</label><input id="f_breed" value="${(f.breed||'').replace(/"/g,'&quot;')}"></div>
+        <div class="field"><label>Purchased</label><input id="f_date" type="date" value="${f.purchased||''}"></div></div>
+      <div class="row2"><div class="field"><label>Start count</label><input id="f_start" type="number" value="${f.start_count||0}" oninput="calcLive()"></div>
+        <div class="field"><label>Mortality (died)</label><input id="f_mort" type="number" value="${f.mortality||0}" oninput="calcLive()"></div></div>
+      <div class="row2"><div class="field"><label>Sold (roasters)</label><input id="f_sold" type="number" value="${f.sold||0}" oninput="calcLive()"></div>
+        <div class="field"><label>Live now</label><input id="f_live" type="number" value="${f.live_birds||0}"></div></div>
+      <div class="hint" id="f_hint"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveFlock('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+  calcLive();
+}
+function calcLive(){const s=+el("f_start").value||0,m=+el("f_mort").value||0,so=+el("f_sold").value||0;
+  const live=Math.max(0,s-m-so); el("f_live").value=live;
+  el("f_hint").textContent=`Live = ${s} start − ${m} died − ${so} sold = ${live}`;}
+async function saveFlock(id){
+  const rec={name:el("f_name").value.trim(),breed:el("f_breed").value.trim(),purchased:el("f_date").value||null,
+    start_count:+el("f_start").value||0,mortality:+el("f_mort").value||0,sold:+el("f_sold").value||0,live_birds:+el("f_live").value||0};
+  if(!rec.name){toast("Enter a name",'err');return;}
+  try{if(!id) rec.code=(rec.name.slice(0,3).toUpperCase()+Date.now()).slice(0,12);
+    const {error}= id? await db.from("flocks").update(rec).eq("id",id):await db.from("flocks").insert(rec);
+    if(error)throw error; toast(id?"Flock updated":"Flock added"); closeModal(); await loadAll();
+  }catch(e){toast(e.message,'err');}
+}
+
+/* ---------- Export all & Delete ---------- */
+function exportCSV(type){
+  let rows,head,name;
+  if(type==="sales"){head=["Date","Customer","Eggs_Dozens","Price_Per_Dozen","Roasters","Chicks","Total","Paid","Balance","Method"];
+    rows=S.sales.map(s=>[s.sale_date,s.customer_name,s.eggs_dozens,s.price_per_dozen,s.meat_birds,s.chicks,s.total_amount,s.amount_paid,s.balance,s.payment_method]);name="henzo_sales";}
+  else{head=["Date","Category","Type","Description","Flock","Qty","Unit","Unit_Price","Amount"];
+    rows=S.expenses.map(e=>[e.expense_date,e.category,e.type,e.description,e.flock_scope,e.qty,e.unit,e.unit_price,e.amount]);name="henzo_expenses";}
+  csvOut(name,head,rows);
+}
+async function delRow(t,id){if(!confirm("Delete this record? This can't be undone."))return;
+  try{const{error}=await db.from(t).delete().eq("id",id);if(error)throw error;toast("Deleted");await loadAll();}
+  catch(e){toast(e.message,'err');}}
+
+/* =====================================================
+   ADVANCED FILTERS (Sales, Expenses, Orders, Customers, Flocks, Reports)
+   ===================================================== */
 const FD=()=>({
   sales:{q:'',items:new Set(),methods:new Set(),status:new Set(),custs:new Set(),from:'',to:''},
   exp:{q:'',cats:new Set(),types:new Set(),scopes:new Set(),from:'',to:''},
@@ -458,4 +1245,7 @@ function renderReport(){
     <div class="panel" style="margin-bottom:16px"><div class="ph"><span class="bar" style="background:var(--amber)"></span><h3>Expenses by Category</h3></div>
       <div class="pb"><table><tbody>${catRows||'<tr><td class="empty">No expenses in this period</td></tr>'}</tbody></table></div></div>`;
 }
+
 </script>
+</body>
+</html>
