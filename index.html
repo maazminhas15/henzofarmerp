@@ -211,6 +211,7 @@
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
     <button data-tab="orders">Orders</button>
+    <button data-tab="eggs">Eggs</button>
     <button data-tab="sales">Sales Ledger</button>
     <button data-tab="expenses">Expenses Ledger</button>
     <button data-tab="customers">Customers</button>
@@ -227,7 +228,7 @@
 <script>
 /* ---------- Boot ---------- */
 let db=null;
-let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
+let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],eggs:[],eggMissing:false,balances:[]}, currentTab="dashboard", charts={};
 const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length>20;
 const el=id=>document.getElementById(id);
 const show=(id,d="block")=>el(id).style.display=d, hide=id=>el(id).style.display="none";
@@ -269,7 +270,7 @@ const ICN={
 
 /* ---------- Data ---------- */
 const CACHE_KEY="henzo_cache_v4";
-function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders}));}catch(e){}}
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders,eggs:S.eggs}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
 function computeBalances(){
   const m={};
@@ -289,18 +290,19 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
 });
 async function loadAll(){
   const c=loadCache();
-  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
+  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],eggs:c.eggs||[],eggMissing:false,balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
   else { el("view").innerHTML=`<div class="empty"><div class="big">🐔</div>Loading farm data…</div>`; }
   try{
-    const [fl,cu,sa,ex,or]=await Promise.all([
+    const [fl,cu,sa,ex,or,eg]=await Promise.all([
       db.from("flocks").select("*").order("purchased"),
       db.from("customers").select("*").order("name"),
       db.from("sales").select("*").order("sale_date",{ascending:false}),
       db.from("expenses").select("*").order("expense_date",{ascending:false}),
-      db.from("orders").select("*").order("delivery_date",{ascending:true})
+      db.from("orders").select("*").order("delivery_date",{ascending:true}),
+      db.from("egg_log").select("*").order("log_date",{ascending:false})
     ]);
     for(const r of [fl,cu,sa,ex]) if(r.error) throw r.error;
-    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,balances:[]}; S.balances=computeBalances();
+    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,eggs:eg.error?[]:eg.data,eggMissing:!!eg.error,balances:[]}; S.balances=computeBalances();
     saveCache(); render(); setSync('synced');
   }catch(e){
     if(!(c&&c.sales)) el("view").innerHTML=`<div class="empty"><div class="big">⚠️</div><b>Couldn't load data</b><br>
@@ -313,13 +315,13 @@ function ensureChart(){ if(window.Chart) return Promise.resolve();
   return _chartP||(_chartP=new Promise((res,rej)=>{const s=document.createElement('script');
     s.src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);}));}
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(_){}});charts={};}
-function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
+function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,eggs:vEggs,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
 function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();}
 
 /* ---------- BACKUP ---------- */
 const BACKUP_KEY="henzo_last_backup";
 function downloadFullBackup(silent){
-  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders};
+  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders,egg_log:S.eggs};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -339,19 +341,46 @@ function checkBackupReminder(){
   } else host.innerHTML="";
 }
 
-/* ---------- DASHBOARD ---------- */
+/* ---------- EGG STATS (shared) ---------- */
+function eggStats(from,to,cats){
+  const inR=d=>(!from||d>=from)&&(!to||d<=to);
+  const logs=(S.eggs||[]).filter(e=>inR(e.log_date));
+  const sales=S.sales.filter(s=>inR(s.sale_date));
+  const col=logs.reduce((a,e)=>a+ +e.collected,0), brk=logs.reduce((a,e)=>a+ +e.broken,0), home=logs.reduce((a,e)=>a+ +e.home_use,0);
+  let soldDz=0,eggRev=0; sales.forEach(s=>{const p=sParts(s);soldDz+=p.dz;eggRev+=p.eggRev;});
+  const cost=S.expenses.filter(e=>inR(e.expense_date)&&(e.type||'operating')==='operating'&&(!cats.size||cats.has(e.category||'Misc'))).reduce((a,e)=>a+ +e.amount,0);
+  const dzLaid=col/12;
+  const days=new Set(logs.map(e=>e.log_date)).size;
+  return {col,brk,home,soldDz,soldPcs:soldDz*12,eggRev,cost,dzLaid,days,hasLogs:logs.length>0,
+    costPerDz:dzLaid>0?cost/dzLaid:null, avgPrice:soldDz>0?eggRev/soldDz:null};
+}
+function eggStock(){
+  const a=S.eggs||[]; if(!a.length) return null;
+  const col=a.reduce((x,e)=>x+ +e.collected,0)-a.reduce((x,e)=>x+ +e.broken,0)-a.reduce((x,e)=>x+ +e.home_use,0);
+  let sold=0; S.sales.forEach(s=>{sold+=sParts(s).dz*12;});
+  return Math.round(col-sold);
+}
+
+/* ---------- DASHBOARD (with date filter) ---------- */
+let DASH={sales:[],exps:[]};
 function vDashboard(){
-  const rev=S.sales.reduce((a,s)=>a+ +s.total_amount,0);
-  const paid=S.sales.reduce((a,s)=>a+ +s.amount_paid,0);
+  const f=F.dash, inR=d=>(!f.from||d>=f.from)&&(!f.to||d<=f.to);
+  const sales=S.sales.filter(s=>inR(s.sale_date)), exps=S.expenses.filter(e=>inR(e.expense_date));
+  DASH={sales,exps}; REF.dash=()=>{destroyCharts();vDashboard();};
+  const rev=sales.reduce((a,s)=>a+ +s.total_amount,0);
+  const paid=sales.reduce((a,s)=>a+ +s.amount_paid,0);
   const due=rev-paid;
-  const opCost=S.expenses.filter(e=>e.type==='operating').reduce((a,e)=>a+ +e.amount,0);
-  const capex=S.expenses.filter(e=>e.type==='capex').reduce((a,e)=>a+ +e.amount,0);
-  const bird=S.expenses.filter(e=>e.type==='biological').reduce((a,e)=>a+ +e.amount,0);
-  const totalSpent=S.expenses.reduce((a,e)=>a+ +e.amount,0);
+  const sumT=t=>exps.filter(e=>e.type===t).reduce((a,e)=>a+ +e.amount,0);
+  const opCost=sumT('operating'), capex=sumT('capex'), bird=sumT('biological');
+  const totalSpent=exps.reduce((a,e)=>a+ +e.amount,0);
   const opProfit=rev-opCost;
   const collRate=rev?((paid/rev)*100).toFixed(1):0;
-  const birds=S.flocks.reduce((a,f)=>a+ +f.live_birds,0);
+  const birds=S.flocks.reduce((a,x)=>a+ +x.live_birds,0);
+  const es=eggStats(f.from,f.to,F.egg.cats), stock=eggStock();
+  const basis=F.egg.cats.size?[...F.egg.cats].join(' + '):'all operating';
+  const margin=(es.costPerDz!=null&&es.avgPrice!=null)?es.avgPrice-es.costPerDz:null;
   el("view").innerHTML=`
+    <div class="toolbar">${rangeHTML('dash')}<div style="flex:1"></div>${resetBtn('dash')}</div>
     <div class="kpis">
       <div class="kpi"><div class="top"><span class="label">Total Revenue</span><span class="ico i-indigo">${ICN.chart}</span></div>
         <div class="val">${money(rev)}</div><div class="foot v-indigo">Egg &amp; meat sales</div></div>
@@ -363,6 +392,12 @@ function vDashboard(){
         <div class="val">${money(opCost)}</div><div class="foot">Feed, vaccine, day-to-day</div></div>
       <div class="kpi"><div class="top"><span class="label">Operating Profit / Loss</span><span class="ico ${opProfit>=0?'i-emerald':'i-red'}">${ICN.bag}</span></div>
         <div class="val ${opProfit>=0?'v-emerald':'v-red'}">${money(opProfit)}</div><div class="foot">Revenue − operating cost</div></div>
+    </div>
+    <div class="kpis">
+      ${kp('Eggs Collected',es.hasLogs?`${numf(+es.dzLaid.toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`:'—',es.hasLogs?`${numf(es.col)} eggs`:'Log eggs in the Eggs tab','i-indigo')}
+      ${kp('Egg Stock In Hand',stock==null?'—':`${numf(+(stock/12).toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`,stock==null?'&nbsp;':`${numf(stock)} eggs (all-time)`,'i-emerald',stock!=null&&stock<0?'v-red':'')}
+      ${kp('Cost per Dozen',es.costPerDz!=null?money(es.costPerDz):'—',`${basis} ÷ dozens laid`,'i-amber')}
+      ${kp('Margin per Dozen',margin!=null?money(margin):'—',es.avgPrice!=null?`Avg sold at ${moneyT(es.avgPrice)}/dz`:'&nbsp;','i-emerald',margin!=null?(margin>=0?'v-emerald':'v-red'):'')}
     </div>
     <div class="kpis">
       <div class="kpi"><div class="top"><span class="label">Total Farm Spent</span><span class="ico i-amber">${ICN.down}</span></div>
@@ -386,10 +421,10 @@ function vDashboard(){
     <div class="panel"><div class="ph"><span class="bar"></span><h3>Recent Sales</h3><span class="sp"></span>
       <button class="btn ghost sm" onclick="tab('sales')">View all →</button></div>
       <div class="twrap"><table><thead><tr><th>Date</th><th>Customer</th><th>Items</th><th class="num">Total</th><th class="num">Balance</th></tr></thead>
-      <tbody>${S.sales.slice(0,6).map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td class="cust">${s.customer_name||"—"}</td>
+      <tbody>${sales.slice(0,6).map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td class="cust">${s.customer_name||"—"}</td>
         <td>${itemLabel(s)}</td><td class="num money">${moneyT(s.total_amount)}</td>
-        <td class="num">${+s.balance>0?`<span class="due">${moneyT(s.balance)}</span>`:`<span class="clr">Paid</span>`}</td></tr>`).join("")
-        ||'<tr><td colspan=5 class="empty">No sales yet</td></tr>'}</tbody></table></div></div>`;
+        <td class="num">${(+s.total_amount-+s.amount_paid)>0?`<span class="due">${moneyT(s.total_amount-s.amount_paid)}</span>`:`<span class="clr">Paid</span>`}</td></tr>`).join("")
+        ||'<tr><td colspan=5 class="empty">No sales in this period</td></tr>'}</tbody></table></div></div>`;
   drawCashChart().catch(()=>{}); drawDonut(totalSpent).catch(()=>{});
 }
 function flockCardHTML(f){
@@ -408,8 +443,8 @@ function flockCardHTML(f){
 async function drawCashChart(){
   await ensureChart(); if(currentTab!=='dashboard'||!el("cashChart")) return;
   const byM={}; const k=d=>{const x=new Date(d);return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0");};
-  S.sales.forEach(s=>{(byM[k(s.sale_date)]=byM[k(s.sale_date)]||{r:0,e:0}).r+= +s.total_amount;});
-  S.expenses.forEach(e=>{(byM[k(e.expense_date)]=byM[k(e.expense_date)]||{r:0,e:0}).e+= +e.amount;});
+  DASH.sales.forEach(s=>{(byM[k(s.sale_date)]=byM[k(s.sale_date)]||{r:0,e:0}).r+= +s.total_amount;});
+  DASH.exps.forEach(e=>{(byM[k(e.expense_date)]=byM[k(e.expense_date)]||{r:0,e:0}).e+= +e.amount;});
   const ms=Object.keys(byM).sort();
   const labels=ms.map(m=>new Date(m+"-01").toLocaleDateString("en",{month:"short",year:"2-digit"}));
   const ctx=el("cashChart").getContext("2d");
@@ -426,7 +461,7 @@ async function drawCashChart(){
 }
 async function drawDonut(total){
   await ensureChart(); if(currentTab!=='dashboard'||!el("donutChart")) return;
-  const byCat={}; S.expenses.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+ +e.amount);
+  const byCat={}; DASH.exps.forEach(e=>byCat[e.category]=(byCat[e.category]||0)+ +e.amount);
   const entries=Object.entries(byCat).sort((a,b)=>b[1]-a[1]);
   const palette={Feed:"#6366f1",Shed:"#10b981",Misc:"#f59e0b",Chicks:"#ec4899",Vaccine:"#8b5cf6",Visit:"#06b6d4",Labour:"#f97316"};
   const colors=entries.map(([k],i)=>palette[k]||["#6366f1","#10b981","#f59e0b","#ec4899","#8b5cf6","#06b6d4"][i%6]);
@@ -444,7 +479,7 @@ async function drawDonut(total){
 function orderItemLabel(o){
   const p=[];
   if(+o.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(o.eggs_dozens)} dz</span>`);
-  if(+o.meat_kg>0) p.push(`<span class="chip meat">🍗 ${numf(o.meat_kg)}kg</span>`);
+  if(+o.meat_kg>0||+o.meat_birds>0) p.push(`<span class="chip meat">🍗 ${+o.meat_birds>0?numf(o.meat_birds)+' birds':''}${+o.meat_birds>0&&+o.meat_kg>0?' · ':''}${+o.meat_kg>0?numf(o.meat_kg)+'kg':''}</span>`);
   if(+o.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(o.chicks)} chicks</span>`);
   return p.join(" ")||'<span class="chip misc">—</span>';
 }
@@ -474,6 +509,7 @@ function orderForm(x){const o=x||{};
       <div class="field"><label>Address</label><input id="o_addr" value="${(o.address||'').replace(/"/g,'&quot;')}" placeholder="House, street, area"></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="o_dz" type="number" step="0.5" value="${o.eggs_dozens||0}" oninput="calcOrderTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="o_ppd" type="number" value="${o.price_per_dozen||0}" oninput="calcOrderTotal()"></div></div>
+      <div class="field"><label>Roasters (number of birds)</label><input id="o_birds" type="number" value="${o.meat_birds||0}"></div>
       <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="o_mkg" type="number" step="0.1" value="${o.meat_kg||0}" oninput="calcOrderTotal()"></div>
         <div class="field"><label>Price / kg</label><input id="o_mppk" type="number" value="${o.price_per_kg||1000}" oninput="calcOrderTotal()"></div></div>
       <div class="row2"><div class="field"><label>Chicks (count)</label><input id="o_chicks" type="number" value="${o.chicks||0}" oninput="calcOrderTotal()"></div>
@@ -515,10 +551,12 @@ async function saveOrder(id){
     delivery_charge:+el("o_dc").value||0, discount:+el("o_disc").value||0,
     total_amount:+el("o_total").value||0, notes:el("o_notes").value.trim()||null
   };
+  const bd=+el("o_birds").value||0;
+  if(bd>0||(id&&(S.orders.find(z=>z.id===id)||{}).meat_birds!=null)) rec.meat_birds=bd;
   try{
     const {error}= id? await db.from("orders").update(rec).eq("id",id) : await db.from("orders").insert({...rec,status:'Pending'});
     if(error)throw error; toast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
-  }catch(e){toast(e.message||"Error — did you run add_orders_table.sql in Supabase yet?",'err');}
+  }catch(e){toast(e.message||"Error — did you run the SQL in Supabase yet?",'err');}
 }
 function deliverOrder(o){
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Complete Order ${o.order_number||''}</h3></div>
@@ -561,7 +599,7 @@ function printInvoice(o){
   const chickSub=(+o.chicks||0)*(+o.chick_price||0);
   const rows=[];
   if(+o.eggs_dozens>0) rows.push(`<tr><td>Eggs</td><td>${numf(o.eggs_dozens)} dozen</td><td>${moneyT(o.price_per_dozen)}</td><td>${moneyT(eggSub)}</td></tr>`);
-  if(+o.meat_kg>0) rows.push(`<tr><td>Meat</td><td>${numf(o.meat_kg)} kg</td><td>${moneyT(o.price_per_kg)}</td><td>${moneyT(meatSub)}</td></tr>`);
+  if(+o.meat_kg>0) rows.push(`<tr><td>Meat</td><td>${+o.meat_birds>0?numf(o.meat_birds)+' birds · ':''}${numf(o.meat_kg)} kg</td><td>${moneyT(o.price_per_kg)}</td><td>${moneyT(meatSub)}</td></tr>`);
   if(+o.chicks>0) rows.push(`<tr><td>Chicks</td><td>${numf(o.chicks)}</td><td>${moneyT(o.chick_price)}</td><td>${moneyT(chickSub)}</td></tr>`);
   const w=window.open('','_blank');
   w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${o.order_number||'Invoice'} - Henzo Farm</title>
@@ -822,7 +860,9 @@ const FD=()=>({
   ord:{q:'',status:new Set(['Pending']),items:new Set(),from:'',to:''},
   cus:{q:'',status:new Set(),items:new Set(),from:'',to:''},
   flk:{ids:new Set()},
-  rep:{from:'',to:''}
+  rep:{from:'',to:''},
+  dash:{from:'',to:''},
+  egg:{from:'',to:'',cats:new Set(['Feed','Vaccine'])}
 });
 let F=FD();
 const REF={};
@@ -1053,7 +1093,7 @@ function ordFiltered(){
   return (S.orders||[]).filter(o=>{
     if(f.q && !((o.customer_name||'')+' '+(o.order_number||'')+' '+(o.phone||'')).toLowerCase().includes(f.q.toLowerCase())) return false;
     if(f.status.size && !f.status.has(o.status)) return false;
-    if(f.items.size && ![...f.items].some(k=>k==='eggs'?+o.eggs_dozens>0:k==='meat'?+o.meat_kg>0:+o.chicks>0)) return false;
+    if(f.items.size && ![...f.items].some(k=>k==='eggs'?+o.eggs_dozens>0:k==='meat'?(+o.meat_kg>0||+o.meat_birds>0):+o.chicks>0)) return false;
     if(f.from && (!o.delivery_date||o.delivery_date<f.from)) return false;
     if(f.to && (!o.delivery_date||o.delivery_date>f.to)) return false;
     return true;
@@ -1078,10 +1118,10 @@ function vOrders(){
 }
 function renderOrderRows(){
   const list=ordFiltered(), sel=F.ord.items, show=k=>!sel.size||sel.has(k);
-  const T={dz:0,kg:0,ch:0,val:0}; list.forEach(o=>{T.dz+=+o.eggs_dozens||0;T.kg+=+o.meat_kg||0;T.ch+=+o.chicks||0;T.val+=+o.total_amount||0;});
+  const T={dz:0,kg:0,bd:0,ch:0,val:0}; list.forEach(o=>{T.dz+=+o.eggs_dozens||0;T.kg+=+o.meat_kg||0;T.bd+=+o.meat_birds||0;T.ch+=+o.chicks||0;T.val+=+o.total_amount||0;});
   const cards=[kp('Orders',numf(list.length),F.ord.status.size?[...F.ord.status].join(' + '):'All statuses','i-indigo')];
   if(show('eggs')) cards.push(kp('Eggs',`${numf(T.dz)} <span style="font-size:14px;color:var(--faint)">dozen</span>`,`${numf(Math.round(T.dz*12))} eggs (pieces)`,'i-indigo'));
-  if(show('meat')) cards.push(kp('Meat',`${numf(+T.kg.toFixed(1))} <span style="font-size:14px;color:var(--faint)">kg</span>`,'&nbsp;','i-red'));
+  if(show('meat')) cards.push(kp('Roasters',`${numf(T.bd)} <span style="font-size:14px;color:var(--faint)">birds</span>`,`${numf(+T.kg.toFixed(1))} kg meat`,'i-red'));
   if(show('chicks')) cards.push(kp('Chicks',numf(T.ch),'&nbsp;','i-amber'));
   cards.push(kp('Order Value',money(T.val),'&nbsp;','i-emerald','v-emerald'));
   el("ordSum").innerHTML=`<div class="kpis">${cards.join('')}</div>`;
@@ -1246,6 +1286,80 @@ function renderReport(){
       <div class="pb"><table><tbody>${catRows||'<tr><td class="empty">No expenses in this period</td></tr>'}</tbody></table></div></div>`;
 }
 
+
+/* =====================================================
+   EGGS TAB — daily log, stock, cost per dozen
+   ===================================================== */
+function eggLogsFiltered(){const f=F.egg;return (S.eggs||[]).filter(e=>(!f.from||e.log_date>=f.from)&&(!f.to||e.log_date<=f.to));}
+function vEggs(){
+  const cats=[...new Set(S.expenses.filter(e=>(e.type||'operating')==='operating').map(e=>e.category||'Misc'))].sort();
+  el("view").innerHTML=`
+    ${S.eggMissing?`<div class="warn" style="margin-bottom:14px">⚠️ The egg log table was not found in Supabase. Run henzo_new_features.sql once in the Supabase SQL Editor, then refresh.</div>`:''}
+    <div class="toolbar">
+      ${rangeHTML('egg')}
+      ${msHTML('egg','cats','Cost basis',cats.map(c=>({v:c,l:c})))}
+      <div style="flex:1"></div>
+      ${resetBtn('egg')}
+      <button class="btn" onclick="eggForm()">${ICN.plus} Log Eggs</button>
+    </div>
+    <div id="eggSum"></div>
+    <div class="cntline" id="eggCnt"></div>
+    <div class="tcard"><div class="twrap"><table>
+      <thead><tr><th>Date</th><th class="num">Collected</th><th class="num">Dozens</th><th class="num">Broken</th><th class="num">Home use</th><th class="num">Net</th><th>Notes</th><th class="num">Actions</th></tr></thead>
+      <tbody id="eggBody"></tbody></table></div></div>`;
+  REF.egg=renderEggs; renderEggs();
+}
+function renderEggs(){
+  const f=F.egg, list=eggLogsFiltered(), es=eggStats(f.from,f.to,f.cats), stock=eggStock();
+  const live=S.flocks.reduce((a,x)=>a+ +x.live_birds,0);
+  const perDay=es.days?es.col/es.days:0, rate=live&&perDay?(perDay/live*100):null;
+  const basis=f.cats.size?[...f.cats].join(' + '):'all operating costs';
+  const margin=(es.costPerDz!=null&&es.avgPrice!=null)?es.avgPrice-es.costPerDz:null;
+  const dz=n=>`${numf(+n.toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`;
+  el("eggSum").innerHTML=`
+    <div class="kpis">
+      ${kp('Collected',dz(es.dzLaid),`${numf(es.col)} eggs · ${es.days} day${es.days===1?'':'s'} logged`,'i-indigo')}
+      ${kp('Sold',dz(es.soldDz),`${numf(Math.round(es.soldPcs))} eggs · ${moneyT(es.eggRev)}`,'i-emerald')}
+      ${kp('Broken + Home use',numf(es.brk+es.home),`${numf(es.brk)} broken · ${numf(es.home)} home`,'i-red')}
+      ${kp('Stock In Hand (all-time)',stock==null?'—':dz(stock/12),stock==null?'Log eggs to track stock':(stock<0?'⚠️ Sold more than logged — some days missing':`${numf(stock)} eggs`),'i-amber',stock!=null&&stock<0?'v-red':'')}
+    </div>
+    <div class="kpis">
+      ${kp('Avg per Day',es.days?numf(Math.round(perDay)):'—',rate!=null?`${rate.toFixed(0)} eggs per 100 live birds`:'&nbsp;','i-indigo')}
+      ${kp('Cost per Dozen',es.costPerDz!=null?money(es.costPerDz):'—',`${basis}: ${moneyT(es.cost)}`,'i-amber')}
+      ${kp('Avg Selling Price',es.avgPrice!=null?money(es.avgPrice):'—','per dozen sold','i-indigo')}
+      ${kp('Margin per Dozen',margin!=null?money(margin):'—',margin!=null?`${es.avgPrice?((margin/es.avgPrice)*100).toFixed(0):0}% of selling price`:'&nbsp;','i-emerald',margin!=null?(margin>=0?'v-emerald':'v-red'):'')}
+    </div>`;
+  el("eggCnt").textContent=`Showing ${list.length} of ${(S.eggs||[]).length} log entries`;
+  el("eggBody").innerHTML=list.map(e=>`<tr>
+    <td class="dt">${fmtDate(e.log_date)}</td><td class="num money">${numf(e.collected)}</td><td class="num dt">${(+e.collected/12).toFixed(1)}</td>
+    <td class="num">${numf(e.broken)}</td><td class="num">${numf(e.home_use)}</td>
+    <td class="num clr">${numf(+e.collected-+e.broken-+e.home_use)}</td><td class="dt">${esc(e.notes||'')}</td>
+    <td class="num"><button class="iconbtn" onclick='eggForm(${JSON.stringify(e)})'>${ICN.edit}</button>
+      <button class="iconbtn del" onclick="delRow('egg_log','${e.id}')">${ICN.del}</button></td></tr>`).join("")
+    ||`<tr><td colspan=8 class="empty"><div class="big">🥚</div>No egg logs yet. Tap "Log Eggs" to add today's collection.</td></tr>`;
+}
+function eggForm(x){const e=x||{};
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit egg log':'Log eggs'}</h3></div>
+    <div class="form">
+      <div class="field"><label>Date</label><input id="g_date" type="date" value="${e.log_date||ymd(new Date())}"></div>
+      <div class="field"><label>Eggs collected (pieces)</label><input id="g_col" type="number" value="${e.collected||''}" oninput="eggHint()"></div>
+      <div class="row2"><div class="field"><label>Broken / spoiled</label><input id="g_brk" type="number" value="${e.broken||0}" oninput="eggHint()"></div>
+        <div class="field"><label>Home use</label><input id="g_home" type="number" value="${e.home_use||0}" oninput="eggHint()"></div></div>
+      <div class="hint" id="g_hint"></div>
+      <div class="field"><label>Notes (optional)</label><input id="g_notes" value="${esc(e.notes||'')}"></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn" onclick="saveEgg('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
+  eggHint();
+}
+function eggHint(){const c=+el("g_col").value||0,b=+el("g_brk").value||0,h=+el("g_home").value||0,n=c-b-h;
+  el("g_hint").textContent=`${numf(c)} collected − ${numf(b)} broken − ${numf(h)} home = ${numf(n)} eggs (${(n/12).toFixed(1)} dozen) for sale`;}
+async function saveEgg(id){
+  const rec={log_date:el("g_date").value,collected:+el("g_col").value||0,broken:+el("g_brk").value||0,home_use:+el("g_home").value||0,notes:el("g_notes").value.trim()||null};
+  if(!rec.log_date||!(rec.collected>0)){toast("Enter date and eggs collected",'err');return;}
+  try{const {error}= id? await db.from("egg_log").update(rec).eq("id",id):await db.from("egg_log").insert(rec);
+    if(error)throw error; toast(id?"Log updated":"Eggs logged"); closeModal(); await loadAll();
+  }catch(e){toast(e.message||"Error — run henzo_new_features.sql in Supabase first",'err');}
+}
 </script>
 </body>
 </html>
