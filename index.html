@@ -8,6 +8,7 @@
   const SUPABASE_URL      = "https://tgtwdimleecmcifjptrt.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_C_7eGsBM7EAO3C5m-nhQ2Q_UFuAGzJ-";
   const APP_PIN           = "1234";
+  const FARM_PHONE        = "+92 311 5190548";   // bill ke neeche print hota hai
 </script>
 <link rel="preconnect" href="https://tgtwdimleecmcifjptrt.supabase.co" crossorigin>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -614,6 +615,8 @@ function printInvoice(o){
     .r{text-align:right}
     .tot{font-size:18px;font-weight:800;margin-top:10px}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
+    .ftr{margin-top:34px;padding-top:12px;border-top:2px solid #10b981;text-align:center;font-size:14px;font-weight:700}
+    .ftr small{display:block;color:#6b7488;font-weight:600;margin-top:3px}
     @media print{button{display:none}}
   </style></head><body>
     <h1>🥚 HENZO FARM</h1><div class="sub">Pasture Raised · Islamabad</div>
@@ -634,6 +637,7 @@ function printInvoice(o){
       <div class="tot">Grand Total: ${moneyT(o.total_amount)}</div>
       ${o.status==='Delivered'?`<div style="color:#10b981;font-weight:700;margin-top:4px">✓ Delivered</div>`:`<div style="color:#f59e0b;font-weight:700;margin-top:4px">Status: ${o.status}</div>`}
     </div>
+    <div class="ftr">📞 Henzo Farm: ${FARM_PHONE}<small>Thank you for your order!</small></div>
     <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Print / Save as PDF</button>
   </body></html>`);
   w.document.close();
