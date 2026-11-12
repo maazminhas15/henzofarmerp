@@ -594,16 +594,24 @@ async function confirmDeliver(o){
     toast("Order delivered — added to Sales Ledger"); closeModal(); await loadAll();
   }catch(e){toast(e.message||"Error",'err');}
 }
-function printInvoice(o){
-  const eggSub=(+o.eggs_dozens||0)*(+o.price_per_dozen||0);
-  const meatSub=(+o.meat_kg||0)*(+o.price_per_kg||0);
-  const chickSub=(+o.chicks||0)*(+o.chick_price||0);
-  const rows=[];
-  if(+o.eggs_dozens>0) rows.push(`<tr><td>Eggs</td><td>${numf(o.eggs_dozens)} dozen</td><td>${moneyT(o.price_per_dozen)}</td><td>${moneyT(eggSub)}</td></tr>`);
-  if(+o.meat_kg>0) rows.push(`<tr><td>Meat</td><td>${+o.meat_birds>0?numf(o.meat_birds)+' birds · ':''}${numf(o.meat_kg)} kg</td><td>${moneyT(o.price_per_kg)}</td><td>${moneyT(meatSub)}</td></tr>`);
-  if(+o.chicks>0) rows.push(`<tr><td>Chicks</td><td>${numf(o.chicks)}</td><td>${moneyT(o.chick_price)}</td><td>${moneyT(chickSub)}</td></tr>`);
+/* ---------- BILLS (Orders + Sales Ledger) with Previous Balance ---------- */
+function saleIsEarlier(a,b){
+  return a.sale_date<b.sale_date || (a.sale_date===b.sale_date && a.created_at && b.created_at && a.created_at<b.created_at);
+}
+function prevBalanceFor(name,sale){
+  const bal=S.sales.filter(x=>(x.customer_name||'')===(name||'') && (!sale || (x.id!==sale.id && saleIsEarlier(x,sale))))
+    .reduce((a,x)=>a+(+x.total_amount-+x.amount_paid),0);
+  return bal>0?Math.round(bal):0;   // shown only when customer really owes from before
+}
+function custPhone(name){const c=S.customers.find(x=>(x.name||'').toLowerCase()===(name||'').toLowerCase());return c&&c.phone?c.phone:'';}
+function orderLinkedSale(o){
+  if(o.status!=='Delivered'||!o.order_number) return null;
+  return S.sales.find(x=>(x.customer_name||'')===(o.customer_name||'') && (x.notes||'').split(';').some(t=>t.trim()==='Order '+o.order_number))||null;
+}
+function renderBill(b){
+  const rows=b.rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="r">${r[3]}</td></tr>`).join('');
   const w=window.open('','_blank');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${o.order_number||'Invoice'} - Henzo Farm</title>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${b.number||'Bill'} - Henzo Farm</title>
   <style>
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2233;max-width:640px;margin:24px auto;padding:0 16px}
     h1{color:#10b981;font-size:26px;margin:0}
@@ -614,6 +622,7 @@ function printInvoice(o){
     th{color:#6b7488;text-transform:uppercase;font-size:11px}
     .r{text-align:right}
     .tot{font-size:18px;font-weight:800;margin-top:10px}
+    .prev{margin-top:12px;padding:10px 12px;border:1.5px solid #ef4444;border-radius:10px;color:#ef4444;font-weight:800;display:flex;justify-content:space-between}
     .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
     .ftr{margin-top:34px;padding-top:12px;border-top:2px solid #10b981;text-align:center;font-size:14px;font-weight:700}
     .ftr small{display:block;color:#6b7488;font-weight:600;margin-top:3px}
@@ -622,25 +631,55 @@ function printInvoice(o){
     <h1>🥚 HENZO FARM</h1><div class="sub">Pasture Raised · Islamabad</div>
     <div class="box">
       <div class="grid">
-        <div><b>Order #</b><br>${o.order_number||'—'}</div>
-        <div><b>Delivery Date</b><br>${fmtDate(o.delivery_date)}</div>
-        <div><b>Customer</b><br>${o.customer_name}</div>
-        <div><b>Phone</b><br>${o.phone||'—'}</div>
+        <div><b>Bill #</b><br>${b.number||'—'}</div>
+        <div><b>Date</b><br>${fmtDate(b.date)}</div>
+        <div><b>Customer</b><br>${esc(b.customer)}</div>
+        <div><b>Phone</b><br>${esc(b.phone)||'—'}</div>
       </div>
-      ${o.address?`<div style="margin-top:8px"><b>Address</b><br>${o.address}</div>`:''}
+      ${b.address?`<div style="margin-top:8px"><b>Address</b><br>${esc(b.address)}</div>`:''}
     </div>
     <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th class="r">Total</th></tr></thead>
-    <tbody>${rows.join("")||'<tr><td colspan=4>No items</td></tr>'}</tbody></table>
+    <tbody>${rows||'<tr><td colspan=4>No items</td></tr>'}</tbody></table>
     <div style="text-align:right;margin-top:10px">
-      ${+o.delivery_charge>0?`<div>Delivery: ${moneyT(o.delivery_charge)}</div>`:''}
-      ${+o.discount>0?`<div>Discount: −${moneyT(o.discount)}</div>`:''}
-      <div class="tot">Grand Total: ${moneyT(o.total_amount)}</div>
-      ${o.status==='Delivered'?`<div style="color:#10b981;font-weight:700;margin-top:4px">✓ Delivered</div>`:`<div style="color:#f59e0b;font-weight:700;margin-top:4px">Status: ${o.status}</div>`}
+      ${b.delivery>0?`<div>Delivery: ${moneyT(b.delivery)}</div>`:''}
+      ${b.discount>0?`<div>Discount: −${moneyT(b.discount)}</div>`:''}
+      <div class="tot">Bill Total: ${moneyT(b.total)}</div>
+      ${b.paid!=null?`<div style="margin-top:4px">Received: ${moneyT(b.paid)}</div>`:''}
+      ${b.paid!=null&&b.total-b.paid>0?`<div style="font-weight:700;color:#ef4444">Balance of this bill: ${moneyT(b.total-b.paid)}</div>`:''}
     </div>
+    ${b.prev>0?`<div class="prev"><span>Previous Balance</span><span>${moneyT(b.prev)}</span></div>
+      <div style="text-align:right"><div class="tot" style="color:#ef4444">${b.paid!=null?'Total Outstanding':'Total Payable'}: ${moneyT(b.payable)}</div></div>`:''}
+    <div style="text-align:right;margin-top:6px;font-weight:700;color:${b.statusColor}">${b.status}</div>
     <div class="ftr">📞 Henzo Farm: ${FARM_PHONE}<small>Thank you for your order!</small></div>
     <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Print / Save as PDF</button>
   </body></html>`);
   w.document.close();
+}
+function printInvoice(o){
+  const rows=[];
+  if(+o.eggs_dozens>0) rows.push(['Eggs',`${numf(o.eggs_dozens)} dozen`,moneyT(o.price_per_dozen),moneyT((+o.eggs_dozens||0)*(+o.price_per_dozen||0))]);
+  if(+o.meat_kg>0) rows.push(['Meat',`${+o.meat_birds>0?numf(o.meat_birds)+' birds · ':''}${numf(o.meat_kg)} kg`,moneyT(o.price_per_kg),moneyT((+o.meat_kg||0)*(+o.price_per_kg||0))]);
+  if(+o.chicks>0) rows.push(['Chicks',numf(o.chicks),moneyT(o.chick_price),moneyT((+o.chicks||0)*(+o.chick_price||0))]);
+  const linked=orderLinkedSale(o);
+  const prev=prevBalanceFor(o.customer_name,linked);
+  const total=+o.total_amount||0, paid=linked?(+linked.amount_paid||0):null;
+  const due=paid!=null?Math.max(0,total-paid):total;
+  renderBill({number:o.order_number,date:o.delivery_date,customer:o.customer_name,phone:o.phone||custPhone(o.customer_name),address:o.address,
+    rows,delivery:+o.delivery_charge||0,discount:+o.discount||0,total,paid,prev,payable:due+prev,
+    status:o.status==='Delivered'?'✓ Delivered':'Status: '+o.status,statusColor:o.status==='Delivered'?'#10b981':'#f59e0b'});
+}
+function printSale(s){
+  const p=sParts(s), m=parseMeatNote(s.notes), tot=+s.total_amount||0, paid=+s.amount_paid||0, rows=[];
+  if(p.dz>0) rows.push(['Eggs',`${numf(p.dz)} dozen`,moneyT(s.price_per_dozen),moneyT(p.eggRev)]);
+  if(p.kg>0||p.birds>0) rows.push(['Meat / Roasters',[p.birds>0?numf(p.birds)+' birds':'',p.kg>0?numf(p.kg)+' kg':''].filter(Boolean).join(' · '),p.kg>0?moneyT(m.ppk)+'/kg':'—',moneyT(p.meatRev)]);
+  if(p.chicks>0) rows.push(['Chicks',numf(p.chicks),moneyT(p.chickRev/p.chicks),moneyT(p.chickRev)]);
+  const diff=Math.round(tot-(p.eggRev+p.meatRev+(p.chicks>0?p.chickRev:0)));
+  if(p.chicks===0&&diff!==0) rows.push([diff>0?'Delivery / other':'Discount / adjustment','','',moneyT(diff)]);
+  const prev=prevBalanceFor(s.customer_name,s);
+  const on=((s.notes||'').split(';').map(t=>t.trim()).find(t=>/^Order /.test(t))||'').replace('Order ','');
+  renderBill({number:on||'—',date:s.sale_date,customer:s.customer_name||'—',phone:custPhone(s.customer_name),address:'',
+    rows,delivery:0,discount:0,total:tot,paid,prev,payable:Math.max(0,tot-paid)+prev,
+    status:tot-paid>0?'Partially paid':'✓ Paid in full',statusColor:tot-paid>0?'#f59e0b':'#10b981'});
 }
 
 /* ---------- SALES: form ---------- */
@@ -1001,7 +1040,8 @@ function renderSalesRows(){
     <td class="num money">${moneyT(s.total_amount)}</td><td class="num clr">${moneyT(s.amount_paid)}</td>
     <td class="num">${(+s.total_amount-+s.amount_paid)>0?`<span class="due">${moneyT(s.total_amount-s.amount_paid)}</span>`:`<span class="clr">✓</span>`}</td>
     <td><span class="chip ${(s.payment_method||'cash').toLowerCase()}">${s.payment_method||'Cash'}</span></td>
-    <td class="num"><button class="iconbtn" onclick='saleForm(${JSON.stringify(s)})'>${ICN.edit}</button>
+    <td class="num" style="white-space:nowrap"><button class="iconbtn" title="Print bill" onclick='printSale(${JSON.stringify(s)})'>🖨️</button>
+      <button class="iconbtn" onclick='saleForm(${JSON.stringify(s)})'>${ICN.edit}</button>
       <button class="iconbtn del" onclick="delRow('sales','${s.id}')">${ICN.del}</button></td></tr>`).join("")
     ||`<tr><td colspan=8 class="empty"><div class="big">📋</div>No sales match these filters</td></tr>`;
 }
