@@ -212,7 +212,6 @@
   <nav id="tabs">
     <button data-tab="dashboard" class="active">Dashboard</button>
     <button data-tab="orders">Orders</button>
-    <button data-tab="eggs">Eggs</button>
     <button data-tab="sales">Sales Ledger</button>
     <button data-tab="expenses">Expenses Ledger</button>
     <button data-tab="customers">Customers</button>
@@ -229,7 +228,7 @@
 <script>
 /* ---------- Boot ---------- */
 let db=null;
-let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],eggs:[],eggMissing:false,balances:[]}, currentTab="dashboard", charts={};
+let S={flocks:[],customers:[],sales:[],expenses:[],orders:[],balances:[]}, currentTab="dashboard", charts={};
 const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length>20;
 const el=id=>document.getElementById(id);
 const show=(id,d="block")=>el(id).style.display=d, hide=id=>el(id).style.display="none";
@@ -271,7 +270,7 @@ const ICN={
 
 /* ---------- Data ---------- */
 const CACHE_KEY="henzo_cache_v4";
-function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders,eggs:S.eggs}));}catch(e){}}
+function saveCache(){try{localStorage.setItem(CACHE_KEY,JSON.stringify({flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders}));}catch(e){}}
 function loadCache(){try{return JSON.parse(localStorage.getItem(CACHE_KEY));}catch(e){return null;}}
 function computeBalances(){
   const m={};
@@ -291,19 +290,18 @@ document.querySelectorAll("#tabs button").forEach(b=>b.onclick=()=>{
 });
 async function loadAll(){
   const c=loadCache();
-  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],eggs:c.eggs||[],eggMissing:false,balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
+  if(c && c.sales){ S={flocks:c.flocks||[],customers:c.customers||[],sales:c.sales||[],expenses:c.expenses||[],orders:c.orders||[],balances:[]}; S.balances=computeBalances(); render(); setSync('updating'); }
   else { el("view").innerHTML=`<div class="empty"><div class="big">🐔</div>Loading farm data…</div>`; }
   try{
-    const [fl,cu,sa,ex,or,eg]=await Promise.all([
+    const [fl,cu,sa,ex,or]=await Promise.all([
       db.from("flocks").select("*").order("purchased"),
       db.from("customers").select("*").order("name"),
       db.from("sales").select("*").order("sale_date",{ascending:false}),
       db.from("expenses").select("*").order("expense_date",{ascending:false}),
-      db.from("orders").select("*").order("delivery_date",{ascending:true}),
-      db.from("egg_log").select("*").order("log_date",{ascending:false})
+      db.from("orders").select("*").order("delivery_date",{ascending:true})
     ]);
     for(const r of [fl,cu,sa,ex]) if(r.error) throw r.error;
-    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,eggs:eg.error?[]:eg.data,eggMissing:!!eg.error,balances:[]}; S.balances=computeBalances();
+    S={flocks:fl.data,customers:cu.data,sales:sa.data,expenses:ex.data,orders:or.error?[]:or.data,balances:[]}; S.balances=computeBalances();
     saveCache(); render(); setSync('synced');
   }catch(e){
     if(!(c&&c.sales)) el("view").innerHTML=`<div class="empty"><div class="big">⚠️</div><b>Couldn't load data</b><br>
@@ -316,13 +314,13 @@ function ensureChart(){ if(window.Chart) return Promise.resolve();
   return _chartP||(_chartP=new Promise((res,rej)=>{const s=document.createElement('script');
     s.src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js";s.onload=res;s.onerror=rej;document.head.appendChild(s);}));}
 function destroyCharts(){Object.values(charts).forEach(c=>{try{c.destroy()}catch(_){}});charts={};}
-function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,eggs:vEggs,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
+function render(){destroyCharts();({dashboard:vDashboard,orders:vOrders,sales:vSales,expenses:vExpenses,customers:vCustomers,flocks:vFlocks,reports:vReports}[currentTab])();}
 function tab(n){document.querySelector(`#tabs button[data-tab="${n}"]`).click();}
 
 /* ---------- BACKUP ---------- */
 const BACKUP_KEY="henzo_last_backup";
 function downloadFullBackup(silent){
-  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders,egg_log:S.eggs};
+  const payload={exported_at:new Date().toISOString(),flocks:S.flocks,customers:S.customers,sales:S.sales,expenses:S.expenses,orders:S.orders};
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
@@ -342,26 +340,6 @@ function checkBackupReminder(){
   } else host.innerHTML="";
 }
 
-/* ---------- EGG STATS (shared) ---------- */
-function eggStats(from,to,cats){
-  const inR=d=>(!from||d>=from)&&(!to||d<=to);
-  const logs=(S.eggs||[]).filter(e=>inR(e.log_date));
-  const sales=S.sales.filter(s=>inR(s.sale_date));
-  const col=logs.reduce((a,e)=>a+ +e.collected,0), brk=logs.reduce((a,e)=>a+ +e.broken,0), home=logs.reduce((a,e)=>a+ +e.home_use,0);
-  let soldDz=0,eggRev=0; sales.forEach(s=>{const p=sParts(s);soldDz+=p.dz;eggRev+=p.eggRev;});
-  const cost=S.expenses.filter(e=>inR(e.expense_date)&&(e.type||'operating')==='operating'&&(!cats.size||cats.has(e.category||'Misc'))).reduce((a,e)=>a+ +e.amount,0);
-  const dzLaid=col/12;
-  const days=new Set(logs.map(e=>e.log_date)).size;
-  return {col,brk,home,soldDz,soldPcs:soldDz*12,eggRev,cost,dzLaid,days,hasLogs:logs.length>0,
-    costPerDz:dzLaid>0?cost/dzLaid:null, avgPrice:soldDz>0?eggRev/soldDz:null};
-}
-function eggStock(){
-  const a=S.eggs||[]; if(!a.length) return null;
-  const col=a.reduce((x,e)=>x+ +e.collected,0)-a.reduce((x,e)=>x+ +e.broken,0)-a.reduce((x,e)=>x+ +e.home_use,0);
-  let sold=0; S.sales.forEach(s=>{sold+=sParts(s).dz*12;});
-  return Math.round(col-sold);
-}
-
 /* ---------- DASHBOARD (with date filter) ---------- */
 let DASH={sales:[],exps:[]};
 function vDashboard(){
@@ -377,9 +355,6 @@ function vDashboard(){
   const opProfit=rev-opCost;
   const collRate=rev?((paid/rev)*100).toFixed(1):0;
   const birds=S.flocks.reduce((a,x)=>a+ +x.live_birds,0);
-  const es=eggStats(f.from,f.to,F.egg.cats), stock=eggStock();
-  const basis=F.egg.cats.size?[...F.egg.cats].join(' + '):'all operating';
-  const margin=(es.costPerDz!=null&&es.avgPrice!=null)?es.avgPrice-es.costPerDz:null;
   el("view").innerHTML=`
     <div class="toolbar">${rangeHTML('dash')}<div style="flex:1"></div>${resetBtn('dash')}</div>
     <div class="kpis">
@@ -393,12 +368,6 @@ function vDashboard(){
         <div class="val">${money(opCost)}</div><div class="foot">Feed, vaccine, day-to-day</div></div>
       <div class="kpi"><div class="top"><span class="label">Operating Profit / Loss</span><span class="ico ${opProfit>=0?'i-emerald':'i-red'}">${ICN.bag}</span></div>
         <div class="val ${opProfit>=0?'v-emerald':'v-red'}">${money(opProfit)}</div><div class="foot">Revenue − operating cost</div></div>
-    </div>
-    <div class="kpis">
-      ${kp('Eggs Collected',es.hasLogs?`${numf(+es.dzLaid.toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`:'—',es.hasLogs?`${numf(es.col)} eggs`:'Log eggs in the Eggs tab','i-indigo')}
-      ${kp('Egg Stock In Hand',stock==null?'—':`${numf(+(stock/12).toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`,stock==null?'&nbsp;':`${numf(stock)} eggs (all-time)`,'i-emerald',stock!=null&&stock<0?'v-red':'')}
-      ${kp('Cost per Dozen',es.costPerDz!=null?money(es.costPerDz):'—',`${basis} ÷ dozens laid`,'i-amber')}
-      ${kp('Margin per Dozen',margin!=null?money(margin):'—',es.avgPrice!=null?`Avg sold at ${moneyT(es.avgPrice)}/dz`:'&nbsp;','i-emerald',margin!=null?(margin>=0?'v-emerald':'v-red'):'')}
     </div>
     <div class="kpis">
       <div class="kpi"><div class="top"><span class="label">Total Farm Spent</span><span class="ico i-amber">${ICN.down}</span></div>
@@ -503,8 +472,9 @@ function orderForm(x){const o=x||{};
   const d=new Date(); d.setDate(d.getDate()+2);
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit order':'New order'}</h3></div>
     <div class="form">
-      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" value="${(o.customer_name||'').replace(/"/g,'&quot;')}">
-        <datalist id="ocl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
+      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" autocomplete="off" oninput="custAutofill('o')" value="${(o.customer_name||'').replace(/"/g,'&quot;')}">
+        <datalist id="ocl">${custOptions()}</datalist></div>
+      <div class="hint" id="o_cinfo" style="display:none"></div>
       <div class="row2"><div class="field"><label>Phone</label><input id="o_phone" value="${(o.phone||'').replace(/"/g,'&quot;')}"></div>
         <div class="field"><label>Delivery date</label><input id="o_date" type="date" value="${o.delivery_date||d.toISOString().slice(0,10)}"></div></div>
       <div class="field"><label>Address</label><input id="o_addr" value="${(o.address||'').replace(/"/g,'&quot;')}" placeholder="House, street, area"></div>
@@ -522,7 +492,7 @@ function orderForm(x){const o=x||{};
       <div class="field"><label>Notes (optional)</label><input id="o_notes" value="${(o.notes||'').replace(/"/g,'&quot;')}"></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveOrder('${x?x.id:''}')">${x?'Update order':'Save order'}</button></div></div>`);
-  o_touched=!!x; calcOrderTotal();
+  o_touched=!!x; calcOrderTotal(); _auto={}; custAutofill('o',true);
 }
 function calcOrderTotal(){
   const dz=+el("o_dz").value||0, ppd=+el("o_ppd").value||0, eggSub=dz*ppd;
@@ -555,8 +525,9 @@ async function saveOrder(id){
   const bd=+el("o_birds").value||0;
   if(bd>0||(id&&(S.orders.find(z=>z.id===id)||{}).meat_birds!=null)) rec.meat_birds=bd;
   try{
+    const cu=await upsertCustomer(name,rec.phone,rec.address); if(cu) rec.customer_name=cu.name;
     const {error}= id? await db.from("orders").update(rec).eq("id",id) : await db.from("orders").insert({...rec,status:'Pending'});
-    if(error)throw error; toast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
+    if(error)throw error; doneToast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
   }catch(e){toast(e.message||"Error — did you run the SQL in Supabase yet?",'err');}
 }
 function deliverOrder(o){
@@ -582,9 +553,7 @@ async function confirmDeliver(o){
     if(e0)throw e0;
     if(fresh.status==='Delivered'){toast("This order has already been completed.",'err');closeModal();await loadAll();return;}
     let cid=null;
-    if(o.customer_name){let c=S.customers.find(x=>x.name.toLowerCase()===o.customer_name.toLowerCase());
-      if(!c){const{data,error}=await db.from("customers").insert({name:o.customer_name,phone:o.phone||null}).select().single();if(error)throw error;c=data;}
-      cid=c.id;}
+    if(o.customer_name){const c=await upsertCustomer(o.customer_name,o.phone,o.address); cid=c?c.id:null;}
     const notes=buildNotesWithMeat(`Order ${o.order_number||''}`.trim(), +o.meat_kg||0, +o.price_per_kg||0);
     const saleRec={sale_date:new Date().toISOString().slice(0,10),customer_id:cid,customer_name:o.customer_name,
       eggs_dozens:o.eggs_dozens||0,price_per_dozen:o.price_per_dozen||0,meat_birds:o.meat_birds||0,chicks:o.chicks||0,
@@ -599,19 +568,19 @@ function saleIsEarlier(a,b){
   return a.sale_date<b.sale_date || (a.sale_date===b.sale_date && a.created_at && b.created_at && a.created_at<b.created_at);
 }
 function prevBalanceFor(name,sale){
-  const bal=S.sales.filter(x=>(x.customer_name||'')===(name||'') && (!sale || (x.id!==sale.id && saleIsEarlier(x,sale))))
+  const bal=S.sales.filter(x=>sameName(x.customer_name,name) && (!sale || (x.id!==sale.id && saleIsEarlier(x,sale))))
     .reduce((a,x)=>a+(+x.total_amount-+x.amount_paid),0);
   return bal>0?Math.round(bal):0;   // shown only when customer really owes from before
 }
 function custPhone(name){const c=S.customers.find(x=>(x.name||'').toLowerCase()===(name||'').toLowerCase());return c&&c.phone?c.phone:'';}
 function orderLinkedSale(o){
   if(o.status!=='Delivered'||!o.order_number) return null;
-  return S.sales.find(x=>(x.customer_name||'')===(o.customer_name||'') && (x.notes||'').split(';').some(t=>t.trim()==='Order '+o.order_number))||null;
+  return S.sales.find(x=>sameName(x.customer_name,o.customer_name) && (x.notes||'').split(';').some(t=>t.trim()==='Order '+o.order_number))||null;
 }
 function renderBill(b){
   const rows=b.rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td><td class="r">${r[3]}</td></tr>`).join('');
   const w=window.open('','_blank');
-  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${b.number||'Bill'} - Henzo Farm</title>
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(b.customer)}${b.number&&b.number!=='—'?' - '+esc(b.number):''} - ${fmtDate(b.date)}</title>
   <style>
     body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2233;max-width:640px;margin:24px auto;padding:0 16px}
     h1{color:#10b981;font-size:26px;margin:0}
@@ -662,7 +631,7 @@ function printInvoice(o){
   const prev=prevBalanceFor(o.customer_name,linked);
   const total=+o.total_amount||0, paid=linked?(+linked.amount_paid||0):null;
   const due=paid!=null?Math.max(0,total-paid):total;
-  renderBill({number:o.order_number,date:o.delivery_date,customer:o.customer_name,phone:o.phone||custPhone(o.customer_name),address:o.address,
+  renderBill({number:o.order_number,date:o.delivery_date,customer:(findCust(o.customer_name)||{}).name||o.customer_name,phone:o.phone||custPhone(o.customer_name),address:o.address||custAddr(o.customer_name),
     rows,delivery:+o.delivery_charge||0,discount:+o.discount||0,total,paid,prev,payable:due+prev,
     status:o.status==='Delivered'?'✓ Delivered':'Status: '+o.status,statusColor:o.status==='Delivered'?'#10b981':'#f59e0b'});
 }
@@ -675,7 +644,7 @@ function printSale(s){
   if(p.chicks===0&&diff!==0) rows.push([diff>0?'Delivery / other':'Discount / adjustment','','',moneyT(diff)]);
   const prev=prevBalanceFor(s.customer_name,s);
   const on=((s.notes||'').split(';').map(t=>t.trim()).find(t=>/^Order /.test(t))||'').replace('Order ','');
-  renderBill({number:on||'—',date:s.sale_date,customer:s.customer_name||'—',phone:custPhone(s.customer_name),address:'',
+  renderBill({number:on||'—',date:s.sale_date,customer:(findCust(s.customer_name)||{}).name||s.customer_name||'—',phone:custPhone(s.customer_name),address:custAddr(s.customer_name),
     rows,delivery:0,discount:0,total:tot,paid,prev,payable:Math.max(0,tot-paid)+prev,
     status:tot-paid>0?'Partially paid':'✓ Paid in full',statusColor:tot-paid>0?'#f59e0b':'#10b981'});
 }
@@ -694,11 +663,15 @@ function buildNotesWithMeat(existingNotes,kg,ppk){
 }
 function saleForm(s,prefillName){const e=s||{};
   const meatInfo=parseMeatNote(e.notes);
+  const cc=findCust(e.customer_name||prefillName)||{};
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${s?'Edit sale':'New sale'}</h3></div>
     <div class="form">
       <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Customer</label><input id="s_cust" list="cl" value="${(e.customer_name||prefillName||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
-        <datalist id="cl">${S.customers.map(c=>`<option value="${c.name.replace(/"/g,'&quot;')}">`).join("")}</datalist></div>
+      <div class="field"><label>Customer</label><input id="s_cust" list="cl" autocomplete="off" oninput="custAutofill('s')" value="${(e.customer_name||prefillName||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
+        <datalist id="cl">${custOptions()}</datalist></div>
+      <div class="hint" id="s_cinfo" style="display:none"></div>
+      <div class="row2"><div class="field"><label>Phone</label><input id="s_phone" value="${esc(cc.phone||'')}" placeholder="03xx-xxxxxxx"></div>
+        <div class="field"><label>Address</label><input id="s_addr" value="${esc(cc.address||'')}" placeholder="House, street, area"></div></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
       <div class="row2"><div class="field"><label>Roasters / Meat (birds count)</label><input id="s_meat" type="number" value="${e.meat_birds||0}" oninput="calcTotal()"></div>
@@ -713,7 +686,7 @@ function saleForm(s,prefillName){const e=s||{};
         <option ${e.payment_method==='Cash'?'selected':''}>Cash</option><option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button></div></div>`);
-  s_touched=!!s; calcTotal(); checkOverpay();
+  s_touched=!!s; calcTotal(); checkOverpay(); _auto={}; custAutofill('s',true);
 }
 function calcTotal(){
   const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,eggSub=dz*ppd;
@@ -745,13 +718,10 @@ async function saveSale(id){
     total_amount:total,amount_paid:pv,payment_method:el("s_method").value,
     notes:buildNotesWithMeat(id?(S.sales.find(x=>x.id===id)||{}).notes:'',mkg,mppk)};
   try{
-    let cid=null;
-    if(name){let c=S.customers.find(x=>x.name.toLowerCase()===name.toLowerCase());
-      if(!c){const{data,error}=await db.from("customers").insert({name}).select().single();if(error)throw error;c=data;S.customers.push(c);}
-      cid=c.id;}
-    rec.customer_id=cid;
+    const cu=name?await upsertCustomer(name,el("s_phone").value,el("s_addr").value):null;
+    rec.customer_id=cu?cu.id:null; if(cu) rec.customer_name=cu.name;
     const {error}= id? await db.from("sales").update(rec).eq("id",id) : await db.from("sales").insert(rec);
-    if(error)throw error; toast(id?"Sale updated":"Sale saved"); closeModal(); await loadAll();
+    if(error)throw error; doneToast(id?"Sale updated":"Sale saved"); closeModal(); await loadAll();
   }catch(e){toast(e.message||"Error",'err');}
 }
 
@@ -827,30 +797,6 @@ async function saveExp(id){
 }
 
 /* ---------- CUSTOMERS: forms ---------- */
-function custHistory(name){
-  const rows=S.sales.filter(s=>(s.customer_name||'')===name).sort((a,b)=>new Date(b.sale_date)-new Date(a.sale_date));
-  const billed=rows.reduce((a,s)=>a+ +s.total_amount,0), received=rows.reduce((a,s)=>a+ +s.amount_paid,0);
-  openModal(`<div class="modal" style="max-width:640px"><div class="mh"><span class="bar"></span><h3>${name} — full history</h3></div>
-    <div class="pb" style="padding:16px 22px">
-      <div class="strip" style="margin-bottom:14px"><div class="s"><div class="l">Billed</div><div class="v">${moneyT(billed)}</div></div>
-        <div class="s"><div class="l">Received</div><div class="v v-emerald">${moneyT(received)}</div></div>
-        <div class="s"><div class="l">Balance</div><div class="v ${billed-received>0?'v-red':'v-emerald'}">${moneyT(billed-received)}</div></div></div>
-      <div class="twrap"><table><thead><tr><th>Date</th><th>Items</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
-      <tbody>${rows.map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td>${itemLabel(s)}</td>
-        <td class="num money">${moneyT(s.total_amount)}</td><td class="num clr">${moneyT(s.amount_paid)}</td>
-        <td class="num">${(+s.total_amount-+s.amount_paid)>0?`<span class="due">${moneyT(s.total_amount-s.amount_paid)}</span>`:`<span class="clr">✓</span>`}</td></tr>`).join("")
-        ||'<tr><td colspan=5 class="empty">No sales</td></tr>'}</tbody></table></div>
-    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Close</button>
-      <button class="btn" onclick="closeModal();saleForm(null,'${name.replace(/'/g,"\\'")}')">${ICN.plus} New sale for ${name}</button></div></div>`);
-}
-function custForm(){openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Add customer</h3></div>
-  <div class="form"><div class="field"><label>Name</label><input id="c_name" placeholder="e.g. Jabeen Aunty"></div>
-    <div class="field"><label>Phone (optional)</label><input id="c_phone" placeholder="03xx-xxxxxxx"></div></div>
-  <div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveCust()">Save</button></div></div>`);}
-async function saveCust(){const name=el("c_name").value.trim();if(!name){toast("Enter a name",'err');return;}
-  try{const{error}=await db.from("customers").insert({name,phone:el("c_phone").value.trim()||null});if(error)throw error;
-    toast("Customer added");closeModal();await loadAll();}catch(e){toast(e.message,'err');}}
-
 /* ---------- FLOCKS: form ---------- */
 function flockForm(x){const f=x||{};
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit flock':'Add flock'}</h3></div>
@@ -902,8 +848,7 @@ const FD=()=>({
   cus:{q:'',status:new Set(),items:new Set(),from:'',to:''},
   flk:{ids:new Set()},
   rep:{from:'',to:''},
-  dash:{from:'',to:''},
-  egg:{from:'',to:'',cats:new Set(['Feed','Vaccine'])}
+  dash:{from:'',to:''}
 });
 let F=FD();
 const REF={};
@@ -1196,52 +1141,6 @@ function renderOrderRows(){
 }
 
 /* ================= CUSTOMERS ================= */
-function cusData(){
-  const f=F.cus;
-  const sales=S.sales.filter(s=>{
-    if(f.items.size && ![...f.items].some(k=>sHas(s,k))) return false;
-    if(f.from && s.sale_date<f.from) return false;
-    if(f.to && s.sale_date>f.to) return false;
-    return true;
-  });
-  const m={};
-  sales.forEach(s=>{const n=s.customer_name||'—';const b=m[n]||(m[n]={name:n,transactions:0,billed:0,received:0,outstanding:0});
-    b.transactions++;b.billed+= +s.total_amount;b.received+= +s.amount_paid;b.outstanding+=(+s.total_amount-+s.amount_paid);});
-  return Object.values(m).filter(c=>{
-    if(f.q && !c.name.toLowerCase().includes(f.q.toLowerCase())) return false;
-    if(f.status.size){const st=c.outstanding>0?'due':'clear'; if(!f.status.has(st)) return false;}
-    return true;
-  }).sort((a,b)=>b.outstanding-a.outstanding||b.billed-a.billed);
-}
-function vCustomers(){
-  el("view").innerHTML=`
-    <div class="toolbar">
-      <div class="search">${ICN.search}<input placeholder="Search customer…" value="${esc(F.cus.q)}" oninput="F.cus.q=this.value;REF.cus()"></div>
-      ${msHTML('cus','status','Balance',[{v:'due',l:'Has outstanding'},{v:'clear',l:'Clear'}])}
-      ${msHTML('cus','items','Bought',ITEM_OPTS)}
-    </div>
-    <div class="toolbar second">
-      ${rangeHTML('cus')}
-      <div style="flex:1"></div>
-      ${resetBtn('cus')}
-      <button class="btn" onclick="custForm()">${ICN.plus} Add Customer</button>
-    </div>
-    <div id="cusSum"></div>
-    <div class="tcard"><div class="twrap"><table>
-      <thead><tr><th>Customer</th><th class="num">Sales</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Balance</th><th class="num">Actions</th></tr></thead>
-      <tbody id="cusBody"></tbody></table></div></div>`;
-  REF.cus=renderCusRows; renderCusRows();
-}
-function renderCusRows(){
-  const b=cusData(), due=b.reduce((a,c)=>a+c.outstanding,0), billed=b.reduce((a,c)=>a+c.billed,0), rec=b.reduce((a,c)=>a+c.received,0);
-  el("cusSum").innerHTML=`<div class="kpis">${kp('Customers',numf(b.length),'matching filters','i-indigo')}${kp('Billed',money(billed),'&nbsp;','i-indigo')}${kp('Received',money(rec),'&nbsp;','i-emerald','v-emerald')}${kp('Outstanding',money(due),'&nbsp;','i-red','v-red')}</div>`;
-  el("cusBody").innerHTML=b.map(c=>`<tr><td class="cust" style="cursor:pointer" onclick="custHistory('${c.name.replace(/'/g,"\\'")}')">${c.name}</td><td class="num">${numf(c.transactions)}</td>
-    <td class="num money">${moneyT(c.billed)}</td><td class="num clr">${moneyT(c.received)}</td>
-    <td class="num">${c.outstanding>0?`<span class="due">${moneyT(c.outstanding)}</span>`:`<span class="clr">Clear</span>`}</td>
-    <td class="num"><button class="btn ghost sm" onclick="saleForm(null,'${c.name.replace(/'/g,"\\'")}')">+ Sale/Payment</button></td></tr>`).join("")
-    ||'<tr><td colspan=6 class="empty">No customers match</td></tr>';
-}
-
 /* ================= FLOCKS ================= */
 function vFlocks(){
   el("view").innerHTML=`
@@ -1329,78 +1228,191 @@ function renderReport(){
 }
 
 
+
 /* =====================================================
-   EGGS TAB — daily log, stock, cost per dozen
+   CUSTOMER DIRECTORY: details, auto-fetch, bills, statement
    ===================================================== */
-function eggLogsFiltered(){const f=F.egg;return (S.eggs||[]).filter(e=>(!f.from||e.log_date>=f.from)&&(!f.to||e.log_date<=f.to));}
-function vEggs(){
-  const cats=[...new Set(S.expenses.filter(e=>(e.type||'operating')==='operating').map(e=>e.category||'Misc'))].sort();
+const sameName=(a,b)=>(a||'').trim().toLowerCase()===(b||'').trim().toLowerCase();
+const findCust=n=>S.customers.find(x=>sameName(x.name,n));
+function custAddr(n){const c=findCust(n);return c&&c.address?c.address:'';}
+function custOptions(){return S.customers.map(c=>`<option value="${esc(c.name)}" label="${esc(c.phone||'')}">`).join('');}
+let custWarn='', _auto={};
+async function upsertCustomer(name,phone,address){
+  name=(name||'').trim(); if(!name) return null;
+  let c=findCust(name);
+  const patch={};
+  if(phone&&phone.trim()&&phone.trim()!==(c&&c.phone||'')) patch.phone=phone.trim();
+  if(address&&address.trim()&&address.trim()!==(c&&c.address||'')) patch.address=address.trim();
+  const run=async pt=>{
+    if(!c){const {data,error}=await db.from('customers').insert({name,...pt}).select().single(); if(error)throw error; S.customers.push(data); c=data; return c;}
+    if(Object.keys(pt).length){const {error}=await db.from('customers').update(pt).eq('id',c.id); if(error)throw error; Object.assign(c,pt);}
+    return c;
+  };
+  try{return await run(patch);}
+  catch(e){ if(/address/i.test(e.message||'')&&('address' in patch)){custWarn='address';delete patch.address;return await run(patch);} throw e; }
+}
+function doneToast(msg){ if(custWarn){custWarn='';toast(msg+' — but address not saved: run henzo_customers.sql in Supabase','err');} else toast(msg); }
+function custAutofill(p,infoOnly){
+  const nm=((el(p==='o'?'o_name':'s_cust')||{}).value||'').trim(), info=el(p+'_cinfo'); if(!info) return;
+  const c=findCust(nm);
+  if(!c){ _auto[p]=null; info.style.display=nm?'block':'none'; info.innerHTML=nm?'🆕 New customer — details will be saved':''; return; }
+  if(!infoOnly && _auto[p]!==c.id){ el(p+'_phone').value=c.phone||''; el(p+'_addr').value=c.address||''; _auto[p]=c.id; }
+  const prev=prevBalanceFor(c.name,null);
+  info.style.display='block';
+  info.innerHTML=`✓ Existing customer · 📞 ${esc(c.phone)||'no phone'} · 📍 ${esc(c.address)||'no address'}${prev>0?` · <b style="color:var(--red)">Previous balance ${moneyT(prev)}</b>`:''}`;
+}
+function itemText(s){
+  const p=sParts(s), o=[];
+  if(p.dz>0) o.push(`${numf(p.dz)} dozen eggs`);
+  if(p.birds>0||p.kg>0) o.push([p.birds>0?numf(p.birds)+' roasters':'',p.kg>0?numf(p.kg)+' kg':''].filter(Boolean).join(' / '));
+  if(p.chicks>0) o.push(`${numf(p.chicks)} chicks`);
+  return o.join(', ')||'—';
+}
+
+/* ----- Customers tab (directory + ledger) ----- */
+let CUS_LIST=[];
+function cusData(){
+  const f=F.cus;
+  const sales=S.sales.filter(s=>{
+    if(f.items.size && ![...f.items].some(k=>sHas(s,k))) return false;
+    if(f.from && s.sale_date<f.from) return false;
+    if(f.to && s.sale_date>f.to) return false;
+    return true;
+  });
+  const m={};
+  const mk=(n,c)=>({name:n,phone:(c&&c.phone)||'',address:(c&&c.address)||'',transactions:0,billed:0,received:0,outstanding:0});
+  S.customers.forEach(c=>{m[(c.name||'').trim().toLowerCase()]=mk(c.name,c);});
+  sales.forEach(s=>{const n=s.customer_name||'—';const k=n.trim().toLowerCase();const b=m[k]||(m[k]=mk(n,null));
+    b.transactions++;b.billed+= +s.total_amount;b.received+= +s.amount_paid;b.outstanding+=(+s.total_amount-+s.amount_paid);});
+  const narrowed=!!(f.items.size||f.from||f.to);
+  return Object.values(m).filter(c=>{
+    if(narrowed&&c.transactions===0) return false;
+    if(f.q && !(c.name+' '+c.phone+' '+c.address).toLowerCase().includes(f.q.toLowerCase())) return false;
+    if(f.status.size){const st=c.outstanding>0?'due':'clear'; if(!f.status.has(st)) return false;}
+    return true;
+  }).sort((a,b)=>b.outstanding-a.outstanding||b.billed-a.billed||a.name.localeCompare(b.name));
+}
+function vCustomers(){
   el("view").innerHTML=`
-    ${S.eggMissing?`<div class="warn" style="margin-bottom:14px">⚠️ The egg log table was not found in Supabase. Run henzo_new_features.sql once in the Supabase SQL Editor, then refresh.</div>`:''}
     <div class="toolbar">
-      ${rangeHTML('egg')}
-      ${msHTML('egg','cats','Cost basis',cats.map(c=>({v:c,l:c})))}
+      <div class="search">${ICN.search}<input placeholder="Search name, phone or address…" value="${esc(F.cus.q)}" oninput="F.cus.q=this.value;REF.cus()"></div>
+      ${msHTML('cus','status','Balance',[{v:'due',l:'Has outstanding'},{v:'clear',l:'Clear'}])}
+      ${msHTML('cus','items','Bought',ITEM_OPTS)}
+    </div>
+    <div class="toolbar second">
+      ${rangeHTML('cus')}
       <div style="flex:1"></div>
-      ${resetBtn('egg')}
-      <button class="btn" onclick="eggForm()">${ICN.plus} Log Eggs</button>
+      ${resetBtn('cus')}
+      <button class="btn" onclick="custForm()">${ICN.plus} Add Customer</button>
     </div>
-    <div id="eggSum"></div>
-    <div class="cntline" id="eggCnt"></div>
+    <div id="cusSum"></div>
     <div class="tcard"><div class="twrap"><table>
-      <thead><tr><th>Date</th><th class="num">Collected</th><th class="num">Dozens</th><th class="num">Broken</th><th class="num">Home use</th><th class="num">Net</th><th>Notes</th><th class="num">Actions</th></tr></thead>
-      <tbody id="eggBody"></tbody></table></div></div>`;
-  REF.egg=renderEggs; renderEggs();
+      <thead><tr><th>Customer</th><th>Phone</th><th>Address</th><th class="num">Sales</th><th class="num">Billed</th><th class="num">Received</th><th class="num">Balance</th><th class="num">Actions</th></tr></thead>
+      <tbody id="cusBody"></tbody></table></div></div>`;
+  REF.cus=renderCusRows; renderCusRows();
 }
-function renderEggs(){
-  const f=F.egg, list=eggLogsFiltered(), es=eggStats(f.from,f.to,f.cats), stock=eggStock();
-  const live=S.flocks.reduce((a,x)=>a+ +x.live_birds,0);
-  const perDay=es.days?es.col/es.days:0, rate=live&&perDay?(perDay/live*100):null;
-  const basis=f.cats.size?[...f.cats].join(' + '):'all operating costs';
-  const margin=(es.costPerDz!=null&&es.avgPrice!=null)?es.avgPrice-es.costPerDz:null;
-  const dz=n=>`${numf(+n.toFixed(1))} <span style="font-size:14px;color:var(--faint)">dozen</span>`;
-  el("eggSum").innerHTML=`
-    <div class="kpis">
-      ${kp('Collected',dz(es.dzLaid),`${numf(es.col)} eggs · ${es.days} day${es.days===1?'':'s'} logged`,'i-indigo')}
-      ${kp('Sold',dz(es.soldDz),`${numf(Math.round(es.soldPcs))} eggs · ${moneyT(es.eggRev)}`,'i-emerald')}
-      ${kp('Broken + Home use',numf(es.brk+es.home),`${numf(es.brk)} broken · ${numf(es.home)} home`,'i-red')}
-      ${kp('Stock In Hand (all-time)',stock==null?'—':dz(stock/12),stock==null?'Log eggs to track stock':(stock<0?'⚠️ Sold more than logged — some days missing':`${numf(stock)} eggs`),'i-amber',stock!=null&&stock<0?'v-red':'')}
-    </div>
-    <div class="kpis">
-      ${kp('Avg per Day',es.days?numf(Math.round(perDay)):'—',rate!=null?`${rate.toFixed(0)} eggs per 100 live birds`:'&nbsp;','i-indigo')}
-      ${kp('Cost per Dozen',es.costPerDz!=null?money(es.costPerDz):'—',`${basis}: ${moneyT(es.cost)}`,'i-amber')}
-      ${kp('Avg Selling Price',es.avgPrice!=null?money(es.avgPrice):'—','per dozen sold','i-indigo')}
-      ${kp('Margin per Dozen',margin!=null?money(margin):'—',margin!=null?`${es.avgPrice?((margin/es.avgPrice)*100).toFixed(0):0}% of selling price`:'&nbsp;','i-emerald',margin!=null?(margin>=0?'v-emerald':'v-red'):'')}
-    </div>`;
-  el("eggCnt").textContent=`Showing ${list.length} of ${(S.eggs||[]).length} log entries`;
-  el("eggBody").innerHTML=list.map(e=>`<tr>
-    <td class="dt">${fmtDate(e.log_date)}</td><td class="num money">${numf(e.collected)}</td><td class="num dt">${(+e.collected/12).toFixed(1)}</td>
-    <td class="num">${numf(e.broken)}</td><td class="num">${numf(e.home_use)}</td>
-    <td class="num clr">${numf(+e.collected-+e.broken-+e.home_use)}</td><td class="dt">${esc(e.notes||'')}</td>
-    <td class="num"><button class="iconbtn" onclick='eggForm(${JSON.stringify(e)})'>${ICN.edit}</button>
-      <button class="iconbtn del" onclick="delRow('egg_log','${e.id}')">${ICN.del}</button></td></tr>`).join("")
-    ||`<tr><td colspan=8 class="empty"><div class="big">🥚</div>No egg logs yet. Tap "Log Eggs" to add today's collection.</td></tr>`;
+function renderCusRows(){
+  const b=cusData(); CUS_LIST=b;
+  const due=b.reduce((a,c)=>a+c.outstanding,0), billed=b.reduce((a,c)=>a+c.billed,0), rec=b.reduce((a,c)=>a+c.received,0);
+  el("cusSum").innerHTML=`<div class="kpis">${kp('Customers',numf(b.length),'matching filters','i-indigo')}${kp('Billed',money(billed),'&nbsp;','i-indigo')}${kp('Received',money(rec),'&nbsp;','i-emerald','v-emerald')}${kp('Outstanding',money(due),'&nbsp;','i-red','v-red')}</div>`;
+  el("cusBody").innerHTML=b.map((c,i)=>`<tr>
+    <td class="cust" style="cursor:pointer" onclick="custHistory(CUS_LIST[${i}].name)">${esc(c.name)}</td>
+    <td>${c.phone?esc(c.phone):'<span class="dt">—</span>'}</td>
+    <td style="white-space:normal;min-width:160px">${c.address?esc(c.address):'<span class="dt">—</span>'}</td>
+    <td class="num">${numf(c.transactions)}</td>
+    <td class="num money">${moneyT(c.billed)}</td><td class="num clr">${moneyT(c.received)}</td>
+    <td class="num">${c.outstanding>0?`<span class="due">${moneyT(c.outstanding)}</span>`:`<span class="clr">Clear</span>`}</td>
+    <td class="num" style="white-space:nowrap"><button class="iconbtn" title="Ledger" onclick="custHistory(CUS_LIST[${i}].name)">📒</button>
+      <button class="iconbtn" title="Edit details" onclick="custEditForm(CUS_LIST[${i}].name)">${ICN.edit}</button>
+      <button class="btn ghost sm" onclick="saleForm(null,CUS_LIST[${i}].name)">+ Sale/Payment</button></td></tr>`).join("")
+    ||'<tr><td colspan=8 class="empty">No customers match</td></tr>';
 }
-function eggForm(x){const e=x||{};
-  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit egg log':'Log eggs'}</h3></div>
-    <div class="form">
-      <div class="field"><label>Date</label><input id="g_date" type="date" value="${e.log_date||ymd(new Date())}"></div>
-      <div class="field"><label>Eggs collected (pieces)</label><input id="g_col" type="number" value="${e.collected||''}" oninput="eggHint()"></div>
-      <div class="row2"><div class="field"><label>Broken / spoiled</label><input id="g_brk" type="number" value="${e.broken||0}" oninput="eggHint()"></div>
-        <div class="field"><label>Home use</label><input id="g_home" type="number" value="${e.home_use||0}" oninput="eggHint()"></div></div>
-      <div class="hint" id="g_hint"></div>
-      <div class="field"><label>Notes (optional)</label><input id="g_notes" value="${esc(e.notes||'')}"></div>
-    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
-      <button class="btn" onclick="saveEgg('${x?x.id:''}')">${x?'Update':'Save'}</button></div></div>`);
-  eggHint();
+function custHistory(name){
+  const c=findCust(name)||{};
+  const rows=S.sales.filter(s=>sameName(s.customer_name,name)).sort((a,b)=>new Date(b.sale_date)-new Date(a.sale_date));
+  const billed=rows.reduce((a,s)=>a+ +s.total_amount,0), received=rows.reduce((a,s)=>a+ +s.amount_paid,0);
+  CUS_NAME=name;
+  openModal(`<div class="modal" style="max-width:680px"><div class="mh"><span class="bar"></span><h3>${esc(name)} — ledger</h3></div>
+    <div class="pb" style="padding:16px 22px">
+      <div class="hint" style="margin-bottom:12px">📞 ${esc(c.phone)||'no phone'} &nbsp;·&nbsp; 📍 ${esc(c.address)||'no address'}</div>
+      <div class="strip" style="margin-bottom:14px"><div class="s"><div class="l">Billed</div><div class="v">${moneyT(billed)}</div></div>
+        <div class="s"><div class="l">Received</div><div class="v v-emerald">${moneyT(received)}</div></div>
+        <div class="s"><div class="l">Balance</div><div class="v ${billed-received>0?'v-red':'v-emerald'}">${moneyT(billed-received)}</div></div></div>
+      <div class="twrap"><table><thead><tr><th>Date</th><th>Items</th><th class="num">Total</th><th class="num">Paid</th><th class="num">Balance</th></tr></thead>
+      <tbody>${rows.map(s=>`<tr><td class="dt">${fmtDate(s.sale_date)}</td><td>${itemLabel(s)}</td>
+        <td class="num money">${moneyT(s.total_amount)}</td><td class="num clr">${moneyT(s.amount_paid)}</td>
+        <td class="num">${(+s.total_amount-+s.amount_paid)>0?`<span class="due">${moneyT(s.total_amount-s.amount_paid)}</span>`:`<span class="clr">✓</span>`}</td></tr>`).join("")
+        ||'<tr><td colspan=5 class="empty">No sales</td></tr>'}</tbody></table></div>
+    </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Close</button>
+      <button class="btn ghost" onclick="printStatement(CUS_NAME)">🖨️ Print Statement</button>
+      <button class="btn" onclick="closeModal();saleForm(null,CUS_NAME)">${ICN.plus} New sale</button></div></div>`);
 }
-function eggHint(){const c=+el("g_col").value||0,b=+el("g_brk").value||0,h=+el("g_home").value||0,n=c-b-h;
-  el("g_hint").textContent=`${numf(c)} collected − ${numf(b)} broken − ${numf(h)} home = ${numf(n)} eggs (${(n/12).toFixed(1)} dozen) for sale`;}
-async function saveEgg(id){
-  const rec={log_date:el("g_date").value,collected:+el("g_col").value||0,broken:+el("g_brk").value||0,home_use:+el("g_home").value||0,notes:el("g_notes").value.trim()||null};
-  if(!rec.log_date||!(rec.collected>0)){toast("Enter date and eggs collected",'err');return;}
-  try{const {error}= id? await db.from("egg_log").update(rec).eq("id",id):await db.from("egg_log").insert(rec);
-    if(error)throw error; toast(id?"Log updated":"Eggs logged"); closeModal(); await loadAll();
-  }catch(e){toast(e.message||"Error — run henzo_new_features.sql in Supabase first",'err');}
+let CUS_NAME='';
+function printStatement(name){
+  const c=findCust(name)||{};
+  const rows=S.sales.filter(s=>sameName(s.customer_name,name)).sort((a,b)=>(a.sale_date<b.sale_date?-1:a.sale_date>b.sale_date?1:((a.created_at||'')<(b.created_at||'')?-1:1)));
+  let run=0, billed=0, rec=0;
+  const body=rows.map(s=>{const bal=+s.total_amount-+s.amount_paid; run+=bal; billed+= +s.total_amount; rec+= +s.amount_paid;
+    return `<tr><td>${fmtDate(s.sale_date)}</td><td>${itemText(s)}</td><td class="r">${moneyT(s.total_amount)}</td><td class="r">${moneyT(s.amount_paid)}</td><td class="r">${moneyT(run)}</td></tr>`;}).join('');
+  const w=window.open('','_blank');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(name)} - Statement - ${fmtDate(new Date())}</title>
+  <style>
+    body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#1a2233;max-width:720px;margin:24px auto;padding:0 16px}
+    h1{color:#10b981;font-size:26px;margin:0}.sub{color:#6b7488;font-size:13px;margin-top:2px}
+    .box{border:1px solid #e4e6ef;border-radius:10px;padding:16px;margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13.5px}
+    table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+    th,td{padding:8px 6px;text-align:left;border-bottom:1px solid #edeef4}th{color:#6b7488;text-transform:uppercase;font-size:11px}.r{text-align:right}
+    .tot{font-size:17px;font-weight:800;margin-top:12px;text-align:right}
+    .ftr{margin-top:34px;padding-top:12px;border-top:2px solid #10b981;text-align:center;font-size:14px;font-weight:700}
+    @media print{button{display:none}}
+  </style></head><body>
+    <h1>🥚 HENZO FARM</h1><div class="sub">Customer Statement · ${fmtDate(new Date())}</div>
+    <div class="box"><div><b>Customer</b><br>${esc(name)}</div>${c.phone?`<div><b>Phone</b><br>${esc(c.phone)}</div>`:''}${c.address?`<div style="grid-column:1/3"><b>Address</b><br>${esc(c.address)}</div>`:''}</div>
+    <table><thead><tr><th>Date</th><th>Items</th><th class="r">Bill</th><th class="r">Paid</th><th class="r">Balance</th></tr></thead><tbody>${body||'<tr><td colspan=5>No sales</td></tr>'}</tbody></table>
+    <div class="tot">Total Billed: ${moneyT(billed)} &nbsp;·&nbsp; Received: ${moneyT(rec)}</div>
+    <div class="tot" style="color:${run>0?'#ef4444':'#10b981'}">${run>0?'Outstanding Balance':'Balance'}: ${moneyT(Math.max(0,run))}</div>
+    <div class="ftr">📞 Henzo Farm: ${FARM_PHONE}</div>
+    <button onclick="window.print()" style="margin-top:20px;padding:10px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:700;cursor:pointer">Print / Save as PDF</button>
+  </body></html>`);
+  w.document.close();
+}
+function custForm(){openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Add customer</h3></div>
+  <div class="form"><div class="field"><label>Name</label><input id="c_name" placeholder="e.g. Jabeen Aunty"></div>
+    <div class="field"><label>Phone</label><input id="c_phone" placeholder="03xx-xxxxxxx"></div>
+    <div class="field"><label>Address</label><input id="c_addr" placeholder="House, street, area"></div></div>
+  <div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveCust()">Save</button></div></div>`);}
+async function saveCust(){const name=el("c_name").value.trim();if(!name){toast("Enter a name",'err');return;}
+  try{await upsertCustomer(name,el("c_phone").value,el("c_addr").value);
+    doneToast("Customer saved");closeModal();await loadAll();}catch(e){toast(e.message,'err');}}
+function custEditForm(name){
+  const c=findCust(name)||{name};
+  CUS_EDIT=name;
+  openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Edit customer</h3></div>
+  <div class="form"><div class="field"><label>Name</label><input id="c_name" value="${esc(c.name)}"></div>
+    <div class="field"><label>Phone</label><input id="c_phone" value="${esc(c.phone||'')}" placeholder="03xx-xxxxxxx"></div>
+    <div class="field"><label>Address</label><input id="c_addr" value="${esc(c.address||'')}" placeholder="House, street, area"></div></div>
+  <div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="saveCustEdit()">Save</button></div></div>`);
+}
+let CUS_EDIT='';
+async function saveCustEdit(){
+  const old=CUS_EDIT, nn=el("c_name").value.trim(), ph=el("c_phone").value.trim(), ad=el("c_addr").value.trim();
+  if(!nn){toast("Enter a name",'err');return;}
+  try{
+    let c=findCust(old);
+    if(nn!==old){
+      if(S.customers.some(x=>x!==c&&sameName(x.name,nn))) throw new Error("A customer with this name already exists");
+      if(!confirm(`Rename "${old}" to "${nn}"? Their old sales and orders will be renamed too.`)) return;
+      const r1=await db.from("sales").update({customer_name:nn}).eq("customer_name",old); if(r1.error)throw r1.error;
+      const r2=await db.from("orders").update({customer_name:nn}).eq("customer_name",old); if(r2.error)throw r2.error;
+      if(c){const r3=await db.from("customers").update({name:nn}).eq("id",c.id); if(r3.error)throw r3.error; c.name=nn;}
+    }
+    await upsertCustomer(nn,ph,ad);
+    // allow clearing phone / address
+    c=findCust(nn);
+    if(c){const clr={}; if(!ph&&c.phone) clr.phone=null; if(!ad&&c.address) clr.address=null;
+      if(Object.keys(clr).length){const r=await db.from("customers").update(clr).eq("id",c.id); if(r.error)throw r.error;}}
+    doneToast("Customer updated"); closeModal(); await loadAll();
+  }catch(e){toast(e.message,'err');}
 }
 </script>
 </body>
