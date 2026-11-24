@@ -8,6 +8,7 @@
   const SUPABASE_URL      = "https://tgtwdimleecmcifjptrt.supabase.co";
   const SUPABASE_ANON_KEY = "sb_publishable_C_7eGsBM7EAO3C5m-nhQ2Q_UFuAGzJ-";
   const APP_PIN           = "1234";
+  const ROASTER_RATE      = 1199;   // default roaster rate per kg (can be changed in every bill)
   const FARM_PHONE        = "+92 311 5190548";   // bill ke neeche print hota hai
 </script>
 <link rel="preconnect" href="https://tgtwdimleecmcifjptrt.supabase.co" crossorigin>
@@ -176,6 +177,15 @@
   .bar-bg{height:7px;background:var(--line-2);border-radius:6px;min-width:90px;overflow:hidden}
   .bar-bg i{display:block;height:100%;background:linear-gradient(90deg,var(--indigo),var(--indigo-2))}
   .toolbar.second{margin-top:-6px}
+  .birdbox{border:1px solid var(--line-2);border-radius:12px;padding:12px;background:#fbfbfe}
+  .bb-h{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+  .bb-h b{font-size:13.5px}
+  .bb-h label{font-size:12px;font-weight:700;color:var(--muted);display:flex;align-items:center;gap:6px}
+  .bb-h input{width:90px;padding:8px 10px;border:1px solid var(--line-2);border-radius:9px;font-weight:700}
+  .brow{display:flex;align-items:center;gap:8px;margin:6px 0}
+  .bn{width:26px;height:26px;border-radius:50%;background:var(--indigo-soft);color:var(--indigo);font-weight:800;font-size:12px;display:grid;place-items:center;flex:none}
+  .brow input{width:110px;padding:9px 11px;border:1px solid var(--line-2);border-radius:10px;font-weight:700}
+  .bamt{flex:1;font-weight:700;color:var(--muted);font-size:12.5px}
   @media(max-width:760px){ .grid-2{grid-template-columns:1fr} .strip{grid-template-columns:1fr;} .strip .s{border-right:none;border-bottom:1px solid var(--line)} main{padding:16px} header{padding:12px 16px} nav{padding:0 10px} .hdate{display:none} }
 </style>
 </head>
@@ -449,7 +459,8 @@ async function drawDonut(total){
 function orderItemLabel(o){
   const p=[];
   if(+o.eggs_dozens>0) p.push(`<span class="chip eggs">🥚 ${numf(o.eggs_dozens)} dz</span>`);
-  if(+o.meat_kg>0||+o.meat_birds>0) p.push(`<span class="chip meat">🍗 ${+o.meat_birds>0?numf(o.meat_birds)+' birds':''}${+o.meat_birds>0&&+o.meat_kg>0?' · ':''}${+o.meat_kg>0?numf(o.meat_kg)+'kg':''}</span>`);
+  const nb=parseBirds(o.notes).length||+o.meat_birds||0;
+  if(+o.meat_kg>0||nb>0) p.push(`<span class="chip meat">🍗 ${nb>0?numf(nb)+' bird'+(nb>1?'s':''):''}${nb>0&&+o.meat_kg>0?' · ':''}${+o.meat_kg>0?numf(+(+o.meat_kg).toFixed(2))+'kg':''}</span>`);
   if(+o.chicks>0) p.push(`<span class="chip chicks">🐣 ${numf(o.chicks)} chicks</span>`);
   return p.join(" ")||'<span class="chip misc">—</span>';
 }
@@ -468,67 +479,114 @@ function nextOrderNumber(){
   const next=(nums.length?Math.max(...nums):1024)+1;
   return "HF-"+next;
 }
+/* ---------- Roaster bird-by-bird entry ---------- */
+const BIRDS={o:[],s:[]};
+function initBirds(notes,kg,n){
+  const w=parseBirds(notes); if(w.length) return w.map(String);
+  if(kg>0){const c=Math.max(1,n||1); return Array.from({length:c},()=>String(+(kg/c).toFixed(2)));}
+  return [''];
+}
+function birdsHTML(p,rate){
+  return `<div class="birdbox"><div class="bb-h"><b>🍗 Roasters (bird by bird)</b>
+    <label>Rate / kg <input id="${p}_mppk" type="number" value="${rate}" oninput="birdCalc('${p}')"></label></div>
+    <div id="${p}_blist"></div>
+    <button type="button" class="btn ghost sm" onclick="birdAdd('${p}')">＋ Add bird</button>
+    <div class="hint" id="${p}_bsum" style="margin-top:10px"></div></div>`;
+}
+function birdTotals(p){
+  const ppk=+((el(p+'_mppk')||{}).value)||0;
+  const w=BIRDS[p].map(x=>+x||0).filter(x=>x>0);
+  return {w,n:w.length,ppk,kg:+w.reduce((a,x)=>a+x,0).toFixed(2),amt:w.reduce((a,x)=>a+Math.round(x*ppk),0)};
+}
+function birdRows(p){
+  el(p+'_blist').innerHTML=BIRDS[p].map((x,i)=>`<div class="brow"><span class="bn">${i+1}</span>
+    <input type="number" step="0.01" inputmode="decimal" placeholder="kg" value="${x}" oninput="birdSet('${p}',${i},this.value)" onkeydown="if(event.key==='Enter'){event.preventDefault();birdAdd('${p}')}">
+    <span class="bamt" id="${p}_bamt${i}"></span>
+    <button type="button" class="iconbtn del" onclick="birdDel('${p}',${i})">✕</button></div>`).join('');
+  birdCalc(p);
+}
+function birdSet(p,i,v){BIRDS[p][i]=v;birdCalc(p);}
+function birdAdd(p){BIRDS[p].push('');birdRows(p);const ins=el(p+'_blist').querySelectorAll('input');ins[ins.length-1].focus();}
+function birdDel(p,i){BIRDS[p].splice(i,1);if(!BIRDS[p].length)BIRDS[p]=[''];birdRows(p);}
+function birdCalc(p){
+  const ppk=+el(p+'_mppk').value||0;
+  BIRDS[p].forEach((x,i)=>{const e=el(p+'_bamt'+i);if(e)e.textContent=(+x>0)?`× ${R(ppk)} = PKR ${R(Math.round(+x*ppk))}`:'';});
+  const t=birdTotals(p);
+  el(p+'_bsum').textContent=t.n?`${t.n} bird${t.n>1?'s':''} · ${t.kg} kg · PKR ${R(t.amt)}`:'Tap ＋ Add bird and enter each weight (kg)';
+  (p==='o'?calcOrderTotal:calcTotal)();
+}
+function discPct(p){
+  const sub=(p==='o'?orderSub:saleSub)(), pct=+el(p+'_discp').value||0;
+  el(p+'_disc').value=pct>0?Math.round(sub*pct/100):0;
+  (p==='o'?calcOrderTotal:calcTotal)();
+}
+
+/* ---------- ORDER form ---------- */
+function orderSub(){
+  return (+el("o_dz").value||0)*(+el("o_ppd").value||0)+birdTotals('o').amt+(+el("o_chicks").value||0)*(+el("o_cp").value||0);
+}
 function orderForm(x){const o=x||{};
   const d=new Date(); d.setDate(d.getDate()+2);
+  BIRDS.o=initBirds(o.notes,+o.meat_kg||0,+o.meat_birds||0);
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${x?'Edit order':'New order'}</h3></div>
     <div class="form">
-      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" autocomplete="off" oninput="custAutofill('o')" value="${(o.customer_name||'').replace(/"/g,'&quot;')}">
+      <div class="field"><label>Customer name</label><input id="o_name" list="ocl" autocomplete="off" oninput="custAutofill('o')" value="${esc(o.customer_name||'')}">
         <datalist id="ocl">${custOptions()}</datalist></div>
       <div class="hint" id="o_cinfo" style="display:none"></div>
-      <div class="row2"><div class="field"><label>Phone</label><input id="o_phone" value="${(o.phone||'').replace(/"/g,'&quot;')}"></div>
+      <div class="row2"><div class="field"><label>Phone</label><input id="o_phone" value="${esc(o.phone||'')}"></div>
         <div class="field"><label>Delivery date</label><input id="o_date" type="date" value="${o.delivery_date||d.toISOString().slice(0,10)}"></div></div>
-      <div class="field"><label>Address</label><input id="o_addr" value="${(o.address||'').replace(/"/g,'&quot;')}" placeholder="House, street, area"></div>
+      <div class="field"><label>Address</label><input id="o_addr" value="${esc(o.address||'')}" placeholder="House, street, area"></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="o_dz" type="number" step="0.5" value="${o.eggs_dozens||0}" oninput="calcOrderTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="o_ppd" type="number" value="${o.price_per_dozen||0}" oninput="calcOrderTotal()"></div></div>
-      <div class="field"><label>Roasters (number of birds)</label><input id="o_birds" type="number" value="${o.meat_birds||0}"></div>
-      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="o_mkg" type="number" step="0.1" value="${o.meat_kg||0}" oninput="calcOrderTotal()"></div>
-        <div class="field"><label>Price / kg</label><input id="o_mppk" type="number" value="${o.price_per_kg||1000}" oninput="calcOrderTotal()"></div></div>
+      ${birdsHTML('o',o.price_per_kg||ROASTER_RATE)}
       <div class="row2"><div class="field"><label>Chicks (count)</label><input id="o_chicks" type="number" value="${o.chicks||0}" oninput="calcOrderTotal()"></div>
         <div class="field"><label>Price / chick</label><input id="o_cp" type="number" value="${o.chick_price||0}" oninput="calcOrderTotal()"></div></div>
-      <div class="row2"><div class="field"><label>Delivery charge</label><input id="o_dc" type="number" value="${o.delivery_charge||0}" oninput="calcOrderTotal()"></div>
-        <div class="field"><label>Discount</label><input id="o_disc" type="number" value="${o.discount||0}" oninput="calcOrderTotal()"></div></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+        <div class="field"><label>Delivery</label><input id="o_dc" type="number" value="${o.delivery_charge||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Discount PKR</label><input id="o_disc" type="number" value="${o.discount||0}" oninput="calcOrderTotal()"></div>
+        <div class="field"><label>Discount %</label><input id="o_discp" type="number" step="0.1" placeholder="optional" oninput="discPct('o')"></div></div>
       <div class="field"><label>Order Total (PKR)</label><input id="o_total" type="number" value="${o.total_amount||0}" oninput="o_touched=true"></div>
       <div class="hint" id="o_hint"></div>
-      <div class="field"><label>Notes (optional)</label><input id="o_notes" value="${(o.notes||'').replace(/"/g,'&quot;')}"></div>
+      <div class="field"><label>Notes (optional)</label><input id="o_notes" value="${esc(cleanNotes(o.notes))}"></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveOrder('${x?x.id:''}')">${x?'Update order':'Save order'}</button></div></div>`);
-  o_touched=!!x; calcOrderTotal(); _auto={}; custAutofill('o',true);
+  o_touched=!!x; birdRows('o'); _auto={}; custAutofill('o',!!x);
 }
 function calcOrderTotal(){
-  const dz=+el("o_dz").value||0, ppd=+el("o_ppd").value||0, eggSub=dz*ppd;
-  const mkg=+el("o_mkg").value||0, mppk=+el("o_mppk").value||0, meatSub=mkg*mppk;
-  const ch=+el("o_chicks").value||0, cp=+el("o_cp").value||0, chickSub=ch*cp;
-  const dc=+el("o_dc").value||0, disc=+el("o_disc").value||0;
-  const t=Math.max(0,eggSub+meatSub+chickSub+dc-disc);
-  const parts=[];
+  if(!el("o_dz")) return;
+  const eggSub=(+el("o_dz").value||0)*(+el("o_ppd").value||0), bt=birdTotals('o'), meatSub=bt.amt;
+  const chickSub=(+el("o_chicks").value||0)*(+el("o_cp").value||0);
+  const dc=+el("o_dc").value||0, disc=+el("o_disc").value||0, sub=eggSub+meatSub+chickSub;
+  if(document.activeElement!==el("o_discp")) el("o_discp").value=(sub&&disc)?+(disc/sub*100).toFixed(1):'';
+  const t=Math.max(0,sub+dc-disc), parts=[];
   if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
-  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
+  if(meatSub) parts.push(`Roasters ${moneyT(meatSub)}`);
   if(chickSub) parts.push(`Chicks ${moneyT(chickSub)}`);
   if(dc) parts.push(`Delivery ${moneyT(dc)}`);
-  if(disc) parts.push(`− Discount ${moneyT(disc)}`);
-  el("o_hint").textContent = parts.length? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill in items to auto-fill total";
-  if(!o_touched && t>0) el("o_total").value=t;
+  if(disc) parts.push(`− Discount ${moneyT(disc)}${sub?` (${(disc/sub*100).toFixed(1)}%)`:''}`);
+  el("o_hint").textContent=parts.length?`${parts.join(' + ')} = ${moneyT(t)}`:"Fill in items to auto-fill total";
+  if(!o_touched && sub>0) el("o_total").value=t;
 }
 async function saveOrder(id){
   const name=el("o_name").value.trim();
   if(!name){toast("Enter a customer name",'err');return;}
+  const bt=birdTotals('o');
   const rec={
     order_number: id ? undefined : nextOrderNumber(),
     customer_name:name, phone:el("o_phone").value.trim()||null, address:el("o_addr").value.trim()||null,
     delivery_date:el("o_date").value||null,
     eggs_dozens:+el("o_dz").value||0, price_per_dozen:+el("o_ppd").value||0,
-    meat_kg:+el("o_mkg").value||0, price_per_kg:+el("o_mppk").value||0,
+    meat_kg:bt.kg, price_per_kg:bt.ppk,
     chicks:+el("o_chicks").value||0, chick_price:+el("o_cp").value||0,
     delivery_charge:+el("o_dc").value||0, discount:+el("o_disc").value||0,
-    total_amount:+el("o_total").value||0, notes:el("o_notes").value.trim()||null
+    total_amount:+el("o_total").value||0,
+    notes:buildNotes(el("o_notes").value.trim(),{birds:bt.w})
   };
-  const bd=+el("o_birds").value||0;
-  if(bd>0||(id&&(S.orders.find(z=>z.id===id)||{}).meat_birds!=null)) rec.meat_birds=bd;
   try{
     const cu=await upsertCustomer(name,rec.phone,rec.address); if(cu) rec.customer_name=cu.name;
     const {error}= id? await db.from("orders").update(rec).eq("id",id) : await db.from("orders").insert({...rec,status:'Pending'});
     if(error)throw error; doneToast(id?"Order updated":"Order saved"); closeModal(); await loadAll();
-  }catch(e){toast(e.message||"Error — did you run the SQL in Supabase yet?",'err');}
+  }catch(e){toast(e.message||"Error",'err');}
 }
 function deliverOrder(o){
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>Complete Order ${o.order_number||''}</h3></div>
@@ -554,9 +612,11 @@ async function confirmDeliver(o){
     if(fresh.status==='Delivered'){toast("This order has already been completed.",'err');closeModal();await loadAll();return;}
     let cid=null;
     if(o.customer_name){const c=await upsertCustomer(o.customer_name,o.phone,o.address); cid=c?c.id:null;}
-    const notes=buildNotesWithMeat(`Order ${o.order_number||''}`.trim(), +o.meat_kg||0, +o.price_per_kg||0);
+    const w=parseBirds(o.notes), ppk=+o.price_per_kg||0, kg=+o.meat_kg||0;
+    const amt=w.length?w.reduce((a,x)=>a+Math.round(x*ppk),0):Math.round(kg*ppk);
+    const notes=buildNotes(`Order ${o.order_number||''}`.trim(),{kg,ppk,amt,birds:w,disc:+o.discount||0,dlv:+o.delivery_charge||0});
     const saleRec={sale_date:new Date().toISOString().slice(0,10),customer_id:cid,customer_name:o.customer_name,
-      eggs_dozens:o.eggs_dozens||0,price_per_dozen:o.price_per_dozen||0,meat_birds:o.meat_birds||0,chicks:o.chicks||0,
+      eggs_dozens:o.eggs_dozens||0,price_per_dozen:o.price_per_dozen||0,meat_birds:w.length||+o.meat_birds||0,chicks:o.chicks||0,
       total_amount:o.total_amount,amount_paid:paid,payment_method:method,notes};
     const{error:e1}=await db.from("sales").insert(saleRec); if(e1)throw e1;
     const{error:e2}=await db.from("orders").update({status:'Delivered',delivered_at:new Date().toISOString()}).eq("id",o.id); if(e2)throw e2;
@@ -610,8 +670,9 @@ function renderBill(b){
     <table><thead><tr><th>Item</th><th>Qty</th><th>Unit Price</th><th class="r">Total</th></tr></thead>
     <tbody>${rows||'<tr><td colspan=4>No items</td></tr>'}</tbody></table>
     <div style="text-align:right;margin-top:10px">
+      ${b.discount>0?`<div>Items Subtotal: ${moneyT(b.total+b.discount-(b.delivery||0))}</div>`:''}
       ${b.delivery>0?`<div>Delivery: ${moneyT(b.delivery)}</div>`:''}
-      ${b.discount>0?`<div>Discount: −${moneyT(b.discount)}</div>`:''}
+      ${b.discount>0?`<div style="color:#10b981;font-weight:700">Discount${(b.total+b.discount-(b.delivery||0))>0?` (${+(b.discount/(b.total+b.discount-(b.delivery||0))*100).toFixed(1)}%)`:''}: −${moneyT(b.discount)}</div>`:''}
       <div class="tot">Bill Total: ${moneyT(b.total)}</div>
       ${b.prev>0&&b.paid!=null&&b.paid>0?`<div style="margin-top:4px">Received: ${moneyT(b.paid)}</div>`:''}
     </div>
@@ -622,81 +683,101 @@ function renderBill(b){
   </body></html>`);
   w.document.close();
 }
+function meatBillRows(w,ppk,kg,n,amt){
+  if(w.length){
+    const rows=w.map((x,i)=>[`🍗 Roaster ${i+1}`,`${+x.toFixed(2)} kg`,`${moneyT(ppk)}/kg`,moneyT(Math.round(x*ppk))]);
+    const tk=+w.reduce((a,x)=>a+x,0).toFixed(2);
+    rows.push(['<b>Roasters total</b>',`<b>${w.length} bird${w.length>1?'s':''} · ${tk} kg</b>`,'',`<b>${moneyT(w.reduce((a,x)=>a+Math.round(x*ppk),0))}</b>`]);
+    return rows;
+  }
+  return [['Meat / Roasters',[n>0?numf(n)+' birds':'',kg>0?numf(kg)+' kg':''].filter(Boolean).join(' · '),kg>0?moneyT(ppk)+'/kg':'—',moneyT(amt)]];
+}
 function printInvoice(o){
   const rows=[];
   if(+o.eggs_dozens>0) rows.push(['Eggs',`${numf(o.eggs_dozens)} dozen`,moneyT(o.price_per_dozen),moneyT((+o.eggs_dozens||0)*(+o.price_per_dozen||0))]);
-  if(+o.meat_kg>0) rows.push(['Meat',`${+o.meat_birds>0?numf(o.meat_birds)+' birds · ':''}${numf(o.meat_kg)} kg`,moneyT(o.price_per_kg),moneyT((+o.meat_kg||0)*(+o.price_per_kg||0))]);
+  const w=parseBirds(o.notes), ppk=+o.price_per_kg||0, kg=+o.meat_kg||0;
+  if(w.length||kg>0) meatBillRows(w,ppk,kg,w.length||+o.meat_birds||0,Math.round(kg*ppk)).forEach(r=>rows.push(r));
   if(+o.chicks>0) rows.push(['Chicks',numf(o.chicks),moneyT(o.chick_price),moneyT((+o.chicks||0)*(+o.chick_price||0))]);
   const linked=orderLinkedSale(o);
   const prev=prevBalanceFor(o.customer_name,linked);
   const total=+o.total_amount||0, paid=linked?(+linked.amount_paid||0):null;
   const due=paid!=null?Math.max(0,total-paid):total;
   renderBill({number:o.order_number,date:o.delivery_date,customer:(findCust(o.customer_name)||{}).name||o.customer_name,phone:o.phone||custPhone(o.customer_name),address:o.address||custAddr(o.customer_name),
-    rows,delivery:+o.delivery_charge||0,discount:+o.discount||0,total,paid,prev,payable:due+prev,
-    status:o.status==='Delivered'?'✓ Delivered':'Status: '+o.status,statusColor:o.status==='Delivered'?'#10b981':'#f59e0b'});
+    rows,delivery:+o.delivery_charge||0,discount:+o.discount||0,total,paid,prev,payable:due+prev});
 }
 function printSale(s){
-  const p=sParts(s), m=parseMeatNote(s.notes), tot=+s.total_amount||0, paid=+s.amount_paid||0, rows=[];
+  const p=sParts(s), m=parseMeatNote(s.notes), w=parseBirds(s.notes), disc=parseTag(s.notes,'Disc'), dlv=parseTag(s.notes,'Deliv');
+  const tot=+s.total_amount||0, paid=+s.amount_paid||0, rows=[];
   if(p.dz>0) rows.push(['Eggs',`${numf(p.dz)} dozen`,moneyT(s.price_per_dozen),moneyT(p.eggRev)]);
-  if(p.kg>0||p.birds>0) rows.push(['Meat / Roasters',[p.birds>0?numf(p.birds)+' birds':'',p.kg>0?numf(p.kg)+' kg':''].filter(Boolean).join(' · '),p.kg>0?moneyT(m.ppk)+'/kg':'—',moneyT(p.meatRev)]);
+  if(p.kg>0||p.birds>0||w.length) meatBillRows(w,m.ppk,p.kg,p.birds,p.meatRev).forEach(r=>rows.push(r));
   if(p.chicks>0) rows.push(['Chicks',numf(p.chicks),moneyT(p.chickRev/p.chicks),moneyT(p.chickRev)]);
-  const diff=Math.round(tot-(p.eggRev+p.meatRev+(p.chicks>0?p.chickRev:0)));
+  const diff=Math.round(tot-(p.eggRev+p.meatRev+(p.chicks>0?p.chickRev:0)+dlv-disc));
   if(p.chicks===0&&diff!==0) rows.push([diff>0?'Delivery / other':'Discount / adjustment','','',moneyT(diff)]);
   const prev=prevBalanceFor(s.customer_name,s);
   const on=((s.notes||'').split(';').map(t=>t.trim()).find(t=>/^Order /.test(t))||'').replace('Order ','');
-  renderBill({number:on||'—',date:s.sale_date,customer:(findCust(s.customer_name)||{}).name||s.customer_name||'—',phone:custPhone(s.customer_name),address:custAddr(s.customer_name),
-    rows,delivery:0,discount:0,total:tot,paid,prev,payable:Math.max(0,tot-paid)+prev,
-    status:tot-paid>0?'Partially paid':'✓ Paid in full',statusColor:tot-paid>0?'#f59e0b':'#10b981'});
+  const tail=String(s.id||'').replace(/[^a-z0-9]/gi,'').slice(-4).toUpperCase();
+  renderBill({number:on||('S-'+(s.sale_date||'').replace(/-/g,'').slice(2)+(tail?'-'+tail:'')),date:s.sale_date,customer:(findCust(s.customer_name)||{}).name||s.customer_name||'—',phone:custPhone(s.customer_name),address:custAddr(s.customer_name),
+    rows,delivery:dlv,discount:disc,total:tot,paid,prev,payable:Math.max(0,tot-paid)+prev});
 }
 
 /* ---------- SALES: form ---------- */
 let s_touched=false;
+const TAG_RE=[/Meat:\s*[\d.]+kg @ Rs[\d.]+\/kg(?: = Rs\d+)?;?\s*/g,/Birds:\s*[\d.|]+;?\s*/g,/Disc:\s*\d+;?\s*/g,/Deliv:\s*\d+;?\s*/g];
+function cleanNotes(n){let t=n||'';TAG_RE.forEach(r=>{t=t.replace(r,'');});return t.replace(/;\s*$/,'').trim();}
 function parseMeatNote(notes){
-  const m=(notes||'').match(/Meat:\s*([\d.]+)kg @ Rs([\d.]+)\/kg/);
-  return m?{kg:+m[1],ppk:+m[2]}:{kg:0,ppk:0};
+  const m=(notes||'').match(/Meat:\s*([\d.]+)kg @ Rs([\d.]+)\/kg(?: = Rs(\d+))?/);
+  return m?{kg:+m[1],ppk:+m[2],amt:m[3]?+m[3]:Math.round(+m[1]*+m[2])}:{kg:0,ppk:0,amt:0};
 }
-function buildNotesWithMeat(existingNotes,kg,ppk){
-  const cleaned=(existingNotes||'').replace(/Meat:\s*[\d.]+kg @ Rs[\d.]+\/kg = Rs[\d.]+;?\s*/,'').trim();
-  if(!(kg>0)) return cleaned||null;
-  const tag=`Meat: ${kg}kg @ Rs${ppk}/kg = Rs${Math.round(kg*ppk)}`;
-  return cleaned? `${cleaned}; ${tag}` : tag;
+function parseBirds(notes){const m=(notes||'').match(/Birds:\s*([\d.|]+)/);return m?m[1].split('|').map(Number).filter(x=>x>0):[];}
+function parseTag(notes,k){const m=(notes||'').match(new RegExp(k+':\\s*(\\d+)'));return m?+m[1]:0;}
+function buildNotes(base,o){
+  const parts=[], b=cleanNotes(base); if(b) parts.push(b);
+  if(o.kg>0) parts.push(`Meat: ${o.kg}kg @ Rs${o.ppk}/kg = Rs${Math.round(o.amt!=null?o.amt:o.kg*o.ppk)}`);
+  if(o.birds&&o.birds.length) parts.push('Birds: '+o.birds.map(x=>+(+x).toFixed(2)).join('|'));
+  if(o.disc>0) parts.push('Disc: '+Math.round(o.disc));
+  if(o.dlv>0) parts.push('Deliv: '+Math.round(o.dlv));
+  return parts.join('; ')||null;
 }
+function buildNotesWithMeat(existing,kg,ppk){return buildNotes(existing,{kg,ppk});}
+function saleSub(){return (+el("s_dz").value||0)*(+el("s_ppd").value||0)+birdTotals('s').amt;}
 function saleForm(s,prefillName){const e=s||{};
-  const meatInfo=parseMeatNote(e.notes);
+  const m=parseMeatNote(e.notes), disc=parseTag(e.notes,'Disc');
+  BIRDS.s=initBirds(e.notes,m.kg,+e.meat_birds||0);
   const cc=findCust(e.customer_name||prefillName)||{};
   openModal(`<div class="modal"><div class="mh"><span class="bar"></span><h3>${s?'Edit sale':'New sale'}</h3></div>
     <div class="form">
       <div class="field"><label>Date</label><input id="s_date" type="date" value="${e.sale_date||new Date().toISOString().slice(0,10)}"></div>
-      <div class="field"><label>Customer</label><input id="s_cust" list="cl" autocomplete="off" oninput="custAutofill('s')" value="${(e.customer_name||prefillName||'').replace(/"/g,'&quot;')}" placeholder="Type or pick">
+      <div class="field"><label>Customer</label><input id="s_cust" list="cl" autocomplete="off" oninput="custAutofill('s')" value="${esc(e.customer_name||prefillName||'')}" placeholder="Type or pick">
         <datalist id="cl">${custOptions()}</datalist></div>
       <div class="hint" id="s_cinfo" style="display:none"></div>
       <div class="row2"><div class="field"><label>Phone</label><input id="s_phone" value="${esc(cc.phone||'')}" placeholder="03xx-xxxxxxx"></div>
         <div class="field"><label>Address</label><input id="s_addr" value="${esc(cc.address||'')}" placeholder="House, street, area"></div></div>
       <div class="row2"><div class="field"><label>Eggs (dozens)</label><input id="s_dz" type="number" step="0.5" value="${e.eggs_dozens||0}" oninput="calcTotal()"></div>
         <div class="field"><label>Price / dozen</label><input id="s_ppd" type="number" value="${e.price_per_dozen||0}" oninput="calcTotal()"></div></div>
-      <div class="row2"><div class="field"><label>Roasters / Meat (birds count)</label><input id="s_meat" type="number" value="${e.meat_birds||0}" oninput="calcTotal()"></div>
-        <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div></div>
-      <div class="row2"><div class="field"><label>Meat weight (kg)</label><input id="s_mkg" type="number" step="0.1" value="${meatInfo.kg||0}" oninput="calcTotal()"></div>
-        <div class="field"><label>Price / kg (meat)</label><input id="s_mppk" type="number" value="${meatInfo.ppk||1000}" oninput="calcTotal()"></div></div>
+      ${birdsHTML('s',m.ppk||ROASTER_RATE)}
+      <div class="field"><label>Chicks (count)</label><input id="s_chicks" type="number" value="${e.chicks||0}"></div>
+      <div class="row2"><div class="field"><label>Discount (PKR)</label><input id="s_disc" type="number" value="${disc||0}" oninput="calcTotal()"></div>
+        <div class="field"><label>Discount %</label><input id="s_discp" type="number" step="0.1" placeholder="optional" oninput="discPct('s')"></div></div>
       <div class="row2"><div class="field"><label>Total (PKR)</label><input id="s_total" type="number" value="${e.total_amount||0}" oninput="s_touched=true;checkOverpay()"></div>
         <div class="field"><label>Paid (PKR)</label><input id="s_paid" type="number" value="${e.amount_paid!=null?e.amount_paid:''}" oninput="checkOverpay()"></div></div>
-      <div class="hint" id="s_hint">Fill eggs and/or meat weight to auto-fill total</div>
+      <div class="hint" id="s_hint">Fill eggs and/or add roasters to auto-fill total</div>
       <div id="s_warn"></div>
       <div class="field"><label>Payment method</label><select id="s_method">
         <option ${e.payment_method==='Cash'?'selected':''}>Cash</option><option ${e.payment_method==='Online'?'selected':''}>Online</option></select></div>
     </div><div class="macts"><button class="btn ghost" onclick="closeModal()">Cancel</button>
       <button class="btn" onclick="saveSale('${s?s.id:''}')">${s?'Update':'Save sale'}</button></div></div>`);
-  s_touched=!!s; calcTotal(); checkOverpay(); _auto={}; custAutofill('s',true);
+  s_touched=!!s; birdRows('s'); checkOverpay(); _auto={}; custAutofill('s',true);
 }
 function calcTotal(){
-  const dz=+el("s_dz").value||0,ppd=+el("s_ppd").value||0,eggSub=dz*ppd;
-  const mkg=+el("s_mkg").value||0,mppk=+el("s_mppk").value||0,meatSub=mkg*mppk;
-  const t=eggSub+meatSub;
-  const parts=[];
+  if(!el("s_dz")) return;
+  const eggSub=(+el("s_dz").value||0)*(+el("s_ppd").value||0), meatSub=birdTotals('s').amt, sub=eggSub+meatSub, disc=+el("s_disc").value||0;
+  if(document.activeElement!==el("s_discp")) el("s_discp").value=(sub&&disc)?+(disc/sub*100).toFixed(1):'';
+  const t=Math.max(0,sub-disc), parts=[];
   if(eggSub) parts.push(`Eggs ${moneyT(eggSub)}`);
-  if(meatSub) parts.push(`Meat ${moneyT(meatSub)}`);
-  el("s_hint").textContent = parts.length ? `${parts.join(' + ')} = ${moneyT(t)}` : "Fill eggs and/or meat weight to auto-fill total";
-  if(!s_touched && t>0) el("s_total").value=t;
+  if(meatSub) parts.push(`Roasters ${moneyT(meatSub)}`);
+  if(disc) parts.push(`− Discount ${moneyT(disc)}${sub?` (${(disc/sub*100).toFixed(1)}%)`:''}`);
+  el("s_hint").textContent=parts.length?`${parts.join(' + ')} = ${moneyT(t)}`:"Fill eggs and/or add roasters to auto-fill total";
+  if(!s_touched && sub>0){ el("s_total").value=t; checkOverpay(); }
 }
 function checkOverpay(){
   const total=+el("s_total").value||0, paidRaw=el("s_paid").value, paid=paidRaw===""?total:(+paidRaw||0);
@@ -712,11 +793,11 @@ async function saveSale(id){
     const ok=confirm("Paid is more than Total for this single sale.\n\nThis is usually a mistake — a second payment for a different item got typed into this sale.\n\nDo you still want to save it this way?");
     if(!ok) return;
   }
-  const mkg=+el("s_mkg").value||0, mppk=+el("s_mppk").value||0;
+  const bt=birdTotals('s'), old=id?((S.sales.find(x=>String(x.id)===String(id))||{}).notes||''):'';
   const rec={sale_date:el("s_date").value,customer_name:name||null,eggs_dozens:+el("s_dz").value||0,
-    price_per_dozen:+el("s_ppd").value||0,meat_birds:+el("s_meat").value||0,chicks:+el("s_chicks").value||0,
+    price_per_dozen:+el("s_ppd").value||0,meat_birds:bt.n,chicks:+el("s_chicks").value||0,
     total_amount:total,amount_paid:pv,payment_method:el("s_method").value,
-    notes:buildNotesWithMeat(id?(S.sales.find(x=>x.id===id)||{}).notes:'',mkg,mppk)};
+    notes:buildNotes(old,{kg:bt.kg,ppk:bt.ppk,amt:bt.amt,birds:bt.w,disc:+el("s_disc").value||0,dlv:parseTag(old,'Deliv')})};
   try{
     const cu=name?await upsertCustomer(name,el("s_phone").value,el("s_addr").value):null;
     rec.customer_id=cu?cu.id:null; if(cu) rec.customer_name=cu.name;
@@ -910,8 +991,9 @@ function csvOut(name,head,rows){
 /* ================= SALES HELPERS ================= */
 function sParts(s){
   const m=parseMeatNote(s.notes), dz=+s.eggs_dozens||0, ppd=+s.price_per_dozen||0, tot=+s.total_amount||0;
-  const eggRev=dz*ppd, meatRev=m.kg*m.ppk;
-  return {dz,birds:+s.meat_birds||0,kg:m.kg,chicks:+s.chicks||0,eggRev,meatRev,chickRev:Math.max(0,tot-eggRev-meatRev)};
+  const disc=parseTag(s.notes,'Disc'), dlv=parseTag(s.notes,'Deliv');
+  const eggRev=dz*ppd, meatRev=m.amt||0, ch=+s.chicks||0;
+  return {dz,birds:Math.max(+s.meat_birds||0,parseBirds(s.notes).length),kg:m.kg,chicks:ch,eggRev,meatRev,chickRev:ch>0?Math.max(0,tot+disc-dlv-eggRev-meatRev):0};
 }
 function sHas(s,k){const p=sParts(s);return k==='eggs'?p.dz>0:k==='meat'?(p.birds>0||p.kg>0):p.chicks>0;}
 const ITEM_OPTS=[{v:'eggs',l:'🥚 Eggs'},{v:'meat',l:'🍗 Roasters / Meat'},{v:'chicks',l:'🐣 Chicks'}];
@@ -1105,7 +1187,7 @@ function vOrders(){
 }
 function renderOrderRows(){
   const list=ordFiltered(), sel=F.ord.items, show=k=>!sel.size||sel.has(k);
-  const T={dz:0,kg:0,bd:0,ch:0,val:0}; list.forEach(o=>{T.dz+=+o.eggs_dozens||0;T.kg+=+o.meat_kg||0;T.bd+=+o.meat_birds||0;T.ch+=+o.chicks||0;T.val+=+o.total_amount||0;});
+  const T={dz:0,kg:0,bd:0,ch:0,val:0}; list.forEach(o=>{T.dz+=+o.eggs_dozens||0;T.kg+=+o.meat_kg||0;T.bd+=(parseBirds(o.notes).length||+o.meat_birds||0);T.ch+=+o.chicks||0;T.val+=+o.total_amount||0;});
   const cards=[kp('Orders',numf(list.length),F.ord.status.size?[...F.ord.status].join(' + '):'All statuses','i-indigo')];
   if(show('eggs')) cards.push(kp('Eggs',`${numf(T.dz)} <span style="font-size:14px;color:var(--faint)">dozen</span>`,`${numf(Math.round(T.dz*12))} eggs (pieces)`,'i-indigo'));
   if(show('meat')) cards.push(kp('Roasters',`${numf(T.bd)} <span style="font-size:14px;color:var(--faint)">birds</span>`,`${numf(+T.kg.toFixed(1))} kg meat`,'i-red'));
