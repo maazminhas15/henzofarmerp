@@ -685,19 +685,17 @@ function renderBill(b){
 }
 function meatBillRows(w,ppk,kg,n,amt){
   if(w.length){
-    const rows=w.map((x,i)=>[`🍗 Roaster ${i+1}`,`${+x.toFixed(2)} kg`,`${moneyT(ppk)}/kg`,moneyT(Math.round(x*ppk))]);
-    const tk=+w.reduce((a,x)=>a+x,0).toFixed(2);
-    rows.push(['<b>Roasters total</b>',`<b>${w.length} bird${w.length>1?'s':''} · ${tk} kg</b>`,'',`<b>${moneyT(w.reduce((a,x)=>a+Math.round(x*ppk),0))}</b>`]);
+    const rows=w.map((x,i)=>[`🍗 Roaster ${i+1}`,`${+x.toFixed(2)} kg`,`${moneyT(ppk)} / kg`,moneyT(Math.round(x*ppk))]);
     return rows;
   }
-  return [['Meat / Roasters',[n>0?numf(n)+' birds':'',kg>0?numf(kg)+' kg':''].filter(Boolean).join(' · '),kg>0?moneyT(ppk)+'/kg':'—',moneyT(amt)]];
+  return [['Meat / Roasters',[n>0?numf(n)+' birds':'',kg>0?numf(kg)+' kg':''].filter(Boolean).join(' · '),kg>0?moneyT(ppk)+' / kg':'—',moneyT(amt)]];
 }
 function printInvoice(o){
   const rows=[];
-  if(+o.eggs_dozens>0) rows.push(['Eggs',`${numf(o.eggs_dozens)} dozen`,moneyT(o.price_per_dozen),moneyT((+o.eggs_dozens||0)*(+o.price_per_dozen||0))]);
+  if(+o.eggs_dozens>0) rows.push(['Eggs',`${numf(o.eggs_dozens)} dozen`,moneyT(o.price_per_dozen)+' / dozen',moneyT((+o.eggs_dozens||0)*(+o.price_per_dozen||0))]);
   const w=parseBirds(o.notes), ppk=+o.price_per_kg||0, kg=+o.meat_kg||0;
   if(w.length||kg>0) meatBillRows(w,ppk,kg,w.length||+o.meat_birds||0,Math.round(kg*ppk)).forEach(r=>rows.push(r));
-  if(+o.chicks>0) rows.push(['Chicks',numf(o.chicks),moneyT(o.chick_price),moneyT((+o.chicks||0)*(+o.chick_price||0))]);
+  if(+o.chicks>0) rows.push(['Chicks',numf(o.chicks),moneyT(o.chick_price)+' / chick',moneyT((+o.chicks||0)*(+o.chick_price||0))]);
   const linked=orderLinkedSale(o);
   const prev=prevBalanceFor(o.customer_name,linked);
   const total=+o.total_amount||0, paid=linked?(+linked.amount_paid||0):null;
@@ -708,9 +706,9 @@ function printInvoice(o){
 function printSale(s){
   const p=sParts(s), m=parseMeatNote(s.notes), w=parseBirds(s.notes), disc=parseTag(s.notes,'Disc'), dlv=parseTag(s.notes,'Deliv');
   const tot=+s.total_amount||0, paid=+s.amount_paid||0, rows=[];
-  if(p.dz>0) rows.push(['Eggs',`${numf(p.dz)} dozen`,moneyT(s.price_per_dozen),moneyT(p.eggRev)]);
+  if(p.dz>0) rows.push(['Eggs',`${numf(p.dz)} dozen`,moneyT(s.price_per_dozen)+' / dozen',moneyT(p.eggRev)]);
   if(p.kg>0||p.birds>0||w.length) meatBillRows(w,m.ppk,p.kg,p.birds,p.meatRev).forEach(r=>rows.push(r));
-  if(p.chicks>0) rows.push(['Chicks',numf(p.chicks),moneyT(p.chickRev/p.chicks),moneyT(p.chickRev)]);
+  if(p.chicks>0) rows.push(['Chicks',numf(p.chicks),moneyT(p.chickRev/p.chicks)+' / chick',moneyT(p.chickRev)]);
   const diff=Math.round(tot-(p.eggRev+p.meatRev+(p.chicks>0?p.chickRev:0)+dlv-disc));
   if(p.chicks===0&&diff!==0) rows.push([diff>0?'Delivery / other':'Discount / adjustment','','',moneyT(diff)]);
   const prev=prevBalanceFor(s.customer_name,s);
